@@ -4,7 +4,7 @@ Gateway общий (`127.0.0.1:18789`). Агенты разделены, что�
 
 | Кто | Агент API | Бэкенд | Runtime |
 |---|---|---|---|
-| yt-bot, calorie-bot | `openclaw/default` | `openai/gpt-5.6-sol` (из `~/.openclaw`) | Codex |
+| yt-bot, calorie-bot (`/var/calorie-bot`) | `openclaw/default` | `openai/gpt-5.6-sol` (из `~/.openclaw`) | Codex |
 | max-repost перевод / SEO | `openclaw/default` + `OPENCLAW_BACKEND_MODEL=openai/gpt-5.6-sol` | Codex |
 | editorial | **не ходит в OpenClaw** | Platform API `EDITORIAL_TEXT_MODEL` / `EDITORIAL_SEARCH_MODEL` через `OPENAI_API_KEY` |
 

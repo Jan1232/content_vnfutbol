@@ -17,7 +17,6 @@ __pycache__/
 .ruff_cache/
 
 # Nested bots / deps
-calorie-bot/.venv/
 **/node_modules/
 
 # Runtime data (DB, media, sessions — large / sensitive)
