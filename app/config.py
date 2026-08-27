@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     editorial_llm_transport: str = "openai"
     editorial_text_model: str = "gpt-5.6-luna"
     editorial_text_fallback: str = "gpt-5-mini"
+    editorial_reasoning_model: str = "gpt-5.6-terra"
+    editorial_reasoning_fallback: str = "gpt-5.6-luna"
     editorial_search_model: str = "gpt-5-search-api"
     editorial_image_model: str = "gpt-image-1-mini"
     editorial_image_gen_fallback: bool = False
@@ -116,6 +118,8 @@ class Settings(BaseSettings):
     story_hard_cap: int = 4
     story_min_gap_posts: int = 3
     story_min_gap_min: int = 180
+    story_incident_window_days: int = 3
+    story_llm_relation_enabled: bool = True
     # meme / video source
     meme_source_enabled: bool = True
     meme_source_max_per_day: int = 5  # 0 = без лимита; дефолт дозирует мем-ленту

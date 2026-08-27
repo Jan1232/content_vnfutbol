@@ -346,6 +346,8 @@ def init_db() -> None:
             ON editorial_story_log(channel_slug, story_key, day)
             """
         )
+        _ensure_column(conn, "editorial_story_log", "summary", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(conn, "editorial_llm_usage", "cached_tokens", "INTEGER NOT NULL DEFAULT 0")
 
 
 def upsert_channel(conn: sqlite3.Connection, chat: dict[str, Any]) -> None:

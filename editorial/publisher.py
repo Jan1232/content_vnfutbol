@@ -93,10 +93,12 @@ def _publish_simulated(
         last_error="dry_run: лента в админке, в MAX не отправлено",
     )
     try:
-        from editorial.story_throttle import record_story_post, story_gate
+        from editorial.story_throttle import make_story_summary, record_story_post, story_gate
 
         _ok, _r, sk, sr = story_gate(channel.slug, item)
-        record_story_post(channel.slug, sk, news_id, sr)
+        record_story_post(
+            channel.slug, sk, news_id, sr, summary=make_story_summary(item)
+        )
     except Exception:
         pass
     return {"action": "simulated", "news_id": news_id, "mid": "simulated"}
@@ -224,9 +226,15 @@ def publish(
         last_error=last_error,
     )
     try:
-        from editorial.story_throttle import record_story_post
+        from editorial.story_throttle import make_story_summary, record_story_post
 
-        record_story_post(channel.slug, story_key_val, int(item["id"]), subtype)
+        record_story_post(
+            channel.slug,
+            story_key_val,
+            int(item["id"]),
+            subtype,
+            summary=make_story_summary(item),
+        )
     except Exception as e:
         print(f"[editorial] story log fail: {e}", flush=True)
     return {

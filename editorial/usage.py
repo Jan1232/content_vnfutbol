@@ -22,13 +22,14 @@ def record_llm_usage(
     completion_tokens: int,
     ok: bool,
     note: str = "",
+    cached_tokens: int = 0,
 ) -> None:
     with db() as conn:
         conn.execute(
             """
             INSERT INTO editorial_llm_usage (
-                news_id, task, model, prompt_tokens, completion_tokens, ok, note
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                news_id, task, model, prompt_tokens, completion_tokens, cached_tokens, ok, note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(news_id or ""),
@@ -36,6 +37,7 @@ def record_llm_usage(
                 (model or "")[:80],
                 int(prompt_tokens or 0),
                 int(completion_tokens or 0),
+                int(cached_tokens or 0),
                 1 if ok else 0,
                 (note or "")[:400],
             ),
@@ -78,7 +80,8 @@ def daily_usage_summary() -> dict[str, Any]:
                    COUNT(*) AS n,
                    SUM(ok) AS ok_n,
                    SUM(prompt_tokens) AS prompt_tokens,
-                   SUM(completion_tokens) AS completion_tokens
+                   SUM(completion_tokens) AS completion_tokens,
+                   SUM(COALESCE(cached_tokens, 0)) AS cached_tokens
             FROM editorial_llm_usage
             WHERE ts >= datetime('now', '-1 day')
             GROUP BY model, task
@@ -88,18 +91,21 @@ def daily_usage_summary() -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     prompt = 0
     completion = 0
+    cached = 0
     usd = 0.0
     n = 0
     for row in rows:
         d = dict(row)
         d["prompt_tokens"] = int(d.get("prompt_tokens") or 0)
         d["completion_tokens"] = int(d.get("completion_tokens") or 0)
+        d["cached_tokens"] = int(d.get("cached_tokens") or 0)
         d["n"] = int(d.get("n") or 0)
         d["ok_n"] = int(d.get("ok_n") or 0)
         d["usd"] = estimate_usd(d["prompt_tokens"], d["completion_tokens"], str(d.get("model") or ""))
         items.append(d)
         prompt += d["prompt_tokens"]
         completion += d["completion_tokens"]
+        cached += d["cached_tokens"]
         usd += d["usd"]
         n += d["n"]
     return {
@@ -107,5 +113,6 @@ def daily_usage_summary() -> dict[str, Any]:
         "n": n,
         "prompt_tokens": prompt,
         "completion_tokens": completion,
+        "cached_tokens": cached,
         "usd": usd,
     }

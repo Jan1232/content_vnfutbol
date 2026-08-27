@@ -91,6 +91,7 @@ def _record_usage(
     ok: bool,
     note: str = "",
     news_id: str | None = None,
+    cached_tokens: int = 0,
 ) -> None:
     try:
         from editorial.usage import record_llm_usage
@@ -103,9 +104,18 @@ def _record_usage(
             completion_tokens=completion_tokens,
             ok=ok,
             note=note[:400],
+            cached_tokens=cached_tokens,
         )
     except Exception as e:
         print(f"[editorial] usage log skip: {e}", flush=True)
+
+
+def _cached_tokens_from_usage(usage: dict[str, Any]) -> int:
+    try:
+        details = usage.get("prompt_tokens_details") or {}
+        return int(details.get("cached_tokens") or usage.get("cached_tokens") or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 class OpenAIClient:
@@ -252,6 +262,7 @@ class OpenAIClient:
                 data = {}
             prompt_tokens = int(usage.get("prompt_tokens") or 0)
             completion_tokens = int(usage.get("completion_tokens") or 0)
+            cached_tokens = _cached_tokens_from_usage(usage if isinstance(usage, dict) else {})
 
             if r.status_code >= 400:
                 note = f"{r.status_code}: {body[:240]}"
@@ -260,6 +271,7 @@ class OpenAIClient:
                     model=name,
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
+                    cached_tokens=cached_tokens,
                     ok=False,
                     note=note,
                 )
@@ -277,6 +289,7 @@ class OpenAIClient:
                     model=name,
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
+                    cached_tokens=cached_tokens,
                     ok=False,
                     note=str(e),
                 )
@@ -287,6 +300,7 @@ class OpenAIClient:
                     model=name,
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
+                    cached_tokens=cached_tokens,
                     ok=False,
                     note="empty content",
                 )
@@ -297,11 +311,12 @@ class OpenAIClient:
                 model=name,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
+                cached_tokens=cached_tokens,
                 ok=True,
             )
             print(
                 f"[editorial] openai {task} model={name} "
-                f"in={prompt_tokens} out={completion_tokens}",
+                f"in={prompt_tokens} out={completion_tokens} cached={cached_tokens}",
                 flush=True,
             )
             return text

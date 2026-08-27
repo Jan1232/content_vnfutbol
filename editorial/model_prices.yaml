@@ -3,6 +3,9 @@ models:
   gpt-5.6-luna:
     input_per_m: 0.20
     output_per_m: 1.20
+  gpt-5.6-terra:
+    input_per_m: 2.00
+    output_per_m: 12.00
   gpt-5-mini:
     input_per_m: 0.125
     output_per_m: 1.00

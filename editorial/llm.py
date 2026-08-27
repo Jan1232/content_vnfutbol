@@ -10,30 +10,19 @@ from editorial.jsonutil import parse_json_object
 from editorial.openai_client import get_client, usage_scope
 
 
-def _text_models() -> tuple[str, str]:
-    settings = get_settings()
-    primary = (settings.editorial_text_model or "gpt-5.6-luna").strip()
-    fallback = (settings.editorial_text_fallback or "gpt-5-mini").strip()
-    return primary, fallback
-
-
-def _search_model() -> str:
-    return (get_settings().editorial_search_model or "gpt-5-search-api").strip()
-
-
-def _allow_groq() -> bool:
-    return bool(get_settings().editorial_allow_groq_fallback)
-
-
 def chat(
     messages: list[dict[str, Any]],
     *,
     temperature: float | None = None,
     max_tokens: int = 1200,
     user: str = "editorial",
+    model_kind: str = "text",
 ) -> str:
     _ = user
-    primary, fallback = _text_models()
+    if model_kind == "reasoning":
+        primary, fallback = _reasoning_models()
+    else:
+        primary, fallback = _text_models()
     try:
         return get_client().chat(
             primary,
@@ -57,18 +46,44 @@ def chat_json(
     temperature: float | None = None,
     max_tokens: int = 900,
     tag: str = "editorial",
+    model_kind: str = "text",
 ) -> dict[str, Any]:
+    # system стабилен байт-в-байт → prompt caching; переменные только в user
+    system_msg = system.rstrip() + "\nОтвечай СТРОГО JSON без markdown."
     with usage_scope(task=_task_from_user(tag)):
         raw = chat(
             [
-                {"role": "system", "content": system + "\nОтвечай СТРОГО JSON без markdown."},
+                {"role": "system", "content": system_msg},
                 {"role": "user", "content": user},
             ],
             temperature=temperature,
             max_tokens=max_tokens,
             user=tag,
+            model_kind=model_kind,
         )
     return parse_json_object(raw)
+
+
+def _text_models() -> tuple[str, str]:
+    settings = get_settings()
+    primary = (settings.editorial_text_model or "gpt-5.6-luna").strip()
+    fallback = (settings.editorial_text_fallback or "gpt-5-mini").strip()
+    return primary, fallback
+
+
+def _reasoning_models() -> tuple[str, str]:
+    settings = get_settings()
+    primary = (settings.editorial_reasoning_model or "gpt-5.6-terra").strip()
+    fallback = (settings.editorial_reasoning_fallback or "gpt-5.6-luna").strip()
+    return primary, fallback
+
+
+def _search_model() -> str:
+    return (get_settings().editorial_search_model or "gpt-5-search-api").strip()
+
+
+def _allow_groq() -> bool:
+    return bool(get_settings().editorial_allow_groq_fallback)
 
 
 def _task_from_user(user: str) -> str:
@@ -123,13 +138,53 @@ def pick_news(
     return data
 
 
+_TOPIC_SYSTEM = (
+    "Ты строгий классификатор темы. Разрешён ТОЛЬКО футбол "
+    "(матчи, игроки, тренеры, клубы, сборные, ФИФА/УЕФА/лиги, трансферы, травмы игроков, судьи, стадионы клубов). "
+    "Запрещены другие виды спорта, политика, криминал, шоу-бизнес, ставки, реклама, здоровье вне травмы игрока."
+)
+
+_REWRITE_SYSTEM = (
+    "Ты старший редактор русскоязычного футбольного канала «ВСЕ НА ФУТБОЛ».\n"
+    "Пиши ЖИВО и ИНФОРМАТИВНО по-русски. Без воды и кликбейта.\n"
+    "Фактическую часть НЕ меняй: имена, суммы, счёт, даты — только из данных.\n"
+    "Для матчей счёт обязателен, если он есть в заголовке, тексте или match_score в фактах.\n"
+    "Нельзя писать, что счёт не указан, если он уже есть во входных данных.\n"
+    "ОБЯЗАТЕЛЬНО переведи на русский. Английских слов в посте быть не должно "
+    "(не midfield, deal, player — пиши по-русски).\n"
+    "Объём: 2–4 абзаца через пустую строку, обычно 40–90 слов. "
+    "В первом абзаце — кто и что случилось. Дальше — детали: имена, цифры, "
+    "причина/контекст. Если в источнике есть яркая цитата — приведи её в «ёлочках» "
+    "с автором через тире.\n"
+    "Нельзя: одна голая фраза; пост = заголовок; дайджест нескольких новостей; "
+    "мета-хвосты («официального объявления нет», «цитата не приводится»).\n"
+    "Стикеры (ОБЯЗАТЕЛЬНО): каждый смысловой абзац начинается с тематического эмодзи: "
+    "⚽ гол/матч, 🔴 срочно, ✍️ контракт, 💰 сумма, 🚑 травма, 🔥 сенсация, 🏆 трофей, 👀 слух. "
+    "1 эмодзи на абзац, не гирлянда, не отдельной строкой в конце.\n"
+    "Запрещено: orphan-эмодзи (отдельная строка только из эмодзи), >2 эмодзи подряд.\n"
+    "Кавычки только «ёлочки», тире длинное —. Без вложенных „лапок“.\n"
+    "stickers в JSON можно вернуть пустым []; они не дописываются в конец поста.\n"
+    "Без CTA-ссылок."
+)
+
+_STORY_RELATION_SYSTEM = (
+    "Ты редакторский судья сюжетов футбольного канала.\n"
+    "Сравни новый пост с уже опубликованными по тому же сюжету.\n"
+    "relation:\n"
+    "- duplicate — пересказ уже сказанного (та же драка/слух/счёт другими словами; "
+    "мнение/реакция эксперта без нового факта; уточнение формулировок).\n"
+    "- development — есть НОВЫЙ фактический факт развития: вердикт, санкции, дисквалификация, "
+    "травма, official-подтверждение, новая сумма/срок, решение федерации.\n"
+    "- unrelated — это вообще другой сюжет (ключ ошибочно склеил).\n"
+    "НЕ засчитывай за development мнения, эмоции и пересказ без новой детали.\n"
+    "Верни JSON: "
+    '{"relation":"duplicate|development|unrelated","new_facts":[],"confidence":0.0,"reason":"..."}'
+)
+
+
 def topic_check(title: str, body: str, entities: dict[str, Any]) -> dict[str, Any]:
     return chat_json(
-        (
-            "Ты строгий классификатор темы. Разрешён ТОЛЬКО футбол "
-            "(матчи, игроки, тренеры, клубы, сборные, ФИФА/УЕФА/лиги, трансферы, травмы игроков, судьи, стадионы клубов). "
-            "Запрещены другие виды спорта, политика, криминал, шоу-бизнес, ставки, реклама, здоровье вне травмы игрока."
-        ),
+        _TOPIC_SYSTEM,
         (
             f"Сущности: {json.dumps(entities, ensure_ascii=False)}\n"
             f"Заголовок: {title}\n"
@@ -161,37 +216,13 @@ def rewrite(item: dict[str, Any], facts: str = "") -> dict[str, Any]:
     from editorial.stickers import pool_for_prompt
 
     pool_hint = ", ".join(pool_for_prompt())
-    sticker_line = (
-        "Стикеры (ОБЯЗАТЕЛЬНО): каждый смысловой абзац начинается с тематического эмодзи: "
-        "⚽ гол/матч, 🔴 срочно, ✍️ контракт, 💰 сумма, 🚑 травма, 🔥 сенсация, 🏆 трофей, 👀 слух"
-    )
+    user_extra = ""
     if pool_hint:
-        sticker_line += f". Также можно из пула редакции: {pool_hint}."
-    sticker_line += (
-        " 1 эмодзи на абзац, не гирлянда, не отдельной строкой в конце.\n"
-        "Запрещено: orphan-эмодзи (отдельная строка только из эмодзи), >2 эмодзи подряд.\n"
-    )
+        user_extra = f"Дополнительный пул стикеров редакции (можно использовать): {pool_hint}.\n"
     return chat_json(
+        _REWRITE_SYSTEM,
         (
-            "Ты старший редактор русскоязычного футбольного канала «ВСЕ НА ФУТБОЛ».\n"
-            "Пиши ЖИВО и ИНФОРМАТИВНО по-русски. Без воды и кликбейта.\n"
-            "Фактическую часть НЕ меняй: имена, суммы, счёт, даты — только из данных.\n"
-            "Для матчей счёт обязателен, если он есть в заголовке, тексте или match_score в фактах.\n"
-            "Нельзя писать, что счёт не указан, если он уже есть во входных данных.\n"
-            "ОБЯЗАТЕЛЬНО переведи на русский. Английских слов в посте быть не должно "
-            "(не midfield, deal, player — пиши по-русски).\n"
-            "Объём: 2–4 абзаца через пустую строку, обычно 40–90 слов. "
-            "В первом абзаце — кто и что случилось. Дальше — детали: имена, цифры, "
-            "причина/контекст. Если в источнике есть яркая цитата — приведи её в «ёлочках» "
-            "с автором через тире.\n"
-            "Нельзя: одна голая фраза; пост = заголовок; дайджест нескольких новостей; "
-            "мета-хвосты («официального объявления нет», «цитата не приводится»).\n"
-            f"{sticker_line}"
-            "Кавычки только «ёлочки», тире длинное —. Без вложенных „лапок“.\n"
-            "stickers в JSON можно вернуть пустым []; они не дописываются в конец поста.\n"
-            "Без CTA-ссылок."
-        ),
-        (
+            f"{user_extra}"
             f"Заголовок: {item.get('title')}\n"
             f"Текст: {(item.get('body') or '')[:2500]}\n"
             f"Тип: {item.get('event_type')}\n"
@@ -206,22 +237,24 @@ def rewrite(item: dict[str, Any], facts: str = "") -> dict[str, Any]:
 def caption(post_text: str, entities: dict[str, Any]) -> dict[str, Any]:
     from editorial.cover_text import prompt_limit_text
 
+    # prompt_limit_text() стабилен (константы) — держим в system для caching
+    system = (
+        "Сгенерируй КОРОТКИЙ текст-заголовок НА картинку. "
+        "Он передаёт суть поста, но НЕ повторяет его дословно и не копирует формулировки. "
+        "Без эмодзи. Обычный регистр — капс сделает CSS.\n"
+        f"{prompt_limit_text()}\n"
+        "Текст — цельная фраза по правилам русского языка, не два обрубка.\n"
+        "Цитата / реплика / оценка человека:\n"
+        "— только кавычки-ёлочки «…»;\n"
+        "— автор после цитаты через тире: «Ребята расстроены» — Галактионов;\n"
+        "— или двоеточие перед цитатой: Галактионов: «Ребята расстроены»;\n"
+        "— нельзя рвать цитату: имя отдельно, слова цитаты отдельно без «» и тире.\n"
+        "Факт, не цитата — без кавычек: законченное предложение или связная именная фраза "
+        "с запятыми, тире, двоеточием по норме. Пример: Локомотив уступил Ростову в Кубке.\n"
+        "Дефис вместо тире не использовать."
+    )
     return chat_json(
-        (
-            "Сгенерируй КОРОТКИЙ текст-заголовок НА картинку. "
-            "Он передаёт суть поста, но НЕ повторяет его дословно и не копирует формулировки. "
-            "Без эмодзи. Обычный регистр — капс сделает CSS.\n"
-            f"{prompt_limit_text()}\n"
-            "Текст — цельная фраза по правилам русского языка, не два обрубка.\n"
-            "Цитата / реплика / оценка человека:\n"
-            "— только кавычки-ёлочки «…»;\n"
-            "— автор после цитаты через тире: «Ребята расстроены» — Галактионов;\n"
-            "— или двоеточие перед цитатой: Галактионов: «Ребята расстроены»;\n"
-            "— нельзя рвать цитату: имя отдельно, слова цитаты отдельно без «» и тире.\n"
-            "Факт, не цитата — без кавычек: законченное предложение или связная именная фраза "
-            "с запятыми, тире, двоеточием по норме. Пример: Локомотив уступил Ростову в Кубке.\n"
-            "Дефис вместо тире не использовать."
-        ),
+        system,
         (
             f"Пост:\n{post_text[:1200]}\n"
             f"Сущности: {json.dumps(entities, ensure_ascii=False)}\n"
@@ -229,6 +262,33 @@ def caption(post_text: str, entities: dict[str, Any]) -> dict[str, Any]:
         ),
         tag="ed-caption",
     )
+
+
+def story_relation(
+    title: str,
+    body: str,
+    prior_summaries: list[str],
+) -> dict[str, Any]:
+    """Повтор vs развитие сюжета. Модель: EDITORIAL_REASONING_MODEL (terra)."""
+    listed = "\n".join(f"- {s}" for s in (prior_summaries or [])[:6] if str(s).strip())
+    if not listed:
+        listed = "- (нет summary)"
+    data = chat_json(
+        _STORY_RELATION_SYSTEM,
+        (
+            f"Уже опубликовано по сюжету:\n{listed}\n\n"
+            f"Новый пост:\nЗаголовок: {title}\n"
+            f"Текст: {(body or '')[:1800]}\n"
+        ),
+        tag="story_relation",
+        max_tokens=500,
+        temperature=0.1,
+        model_kind="reasoning",
+    )
+    rel = str(data.get("relation") or "").strip().lower()
+    if rel not in {"duplicate", "development", "unrelated"}:
+        data["relation"] = "duplicate"
+    return data
 
 
 def image_search_query(title: str, *, year: str = "", event_type: str = "") -> str:
