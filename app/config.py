@@ -120,6 +120,11 @@ class Settings(BaseSettings):
     story_min_gap_min: int = 180
     story_incident_window_days: int = 3
     story_llm_relation_enabled: bool = True
+    # автоотклонение карточек в TG-модерации (дневные часы Екб)
+    moderation_auto_reject_min: int = 60
+    moderation_auto_reject_tz: str = "Asia/Yekaterinburg"
+    moderation_quiet_start_hour: int = 22  # ночь с 22:00
+    moderation_quiet_end_hour: int = 8  # до 08:00
     # meme / video source
     meme_source_enabled: bool = True
     meme_source_max_per_day: int = 5  # 0 = без лимита; дефолт дозирует мем-ленту

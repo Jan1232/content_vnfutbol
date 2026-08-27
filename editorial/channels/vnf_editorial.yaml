@@ -65,7 +65,7 @@ template_map:
   transfer: transfer
   injury: breaking
   match_result: default
-  official_statement: breaking
+  official_statement: default
   lineup: default
   lifestyle: default
   # meme: без шаблона — готовое медиа (видео/картинка)

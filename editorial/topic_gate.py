@@ -48,6 +48,7 @@ EVENT_RULES: list[tuple[str, tuple[str, ...]]] = [
             "отступн",
             "loan",
             "аренда",
+            "аренду",
             "released",
             "расторг",
             "контракт",
@@ -55,6 +56,16 @@ EVENT_RULES: list[tuple[str, tuple[str, ...]]] = [
             "перейд",
             "покинет",
             "покидает",
+            "хирвигоу",
+            "here we go",
+            "опцие",
+            "опцией выкуп",
+            "обязательным выкуп",
+            "миллионов евро",
+            "миллионов фунт",
+            "ведёт переговоры",
+            "ведет переговоры",
+            "предложение по",
         ),
     ),
     (
@@ -70,6 +81,8 @@ EVENT_RULES: list[tuple[str, tuple[str, ...]]] = [
             "выбыл",
             "диагностир",
             "diagnos",
+            "порванные крест",
+            "увезли на коляске",
         ),
     ),
     (
@@ -91,6 +104,9 @@ EVENT_RULES: list[tuple[str, tuple[str, ...]]] = [
             "won ",
             "beats ",
             "beat ",
+            "обладатель",
+            "суперкубк",
+            "дубль оформля",
         ),
     ),
     ("lineup", (
@@ -103,6 +119,7 @@ EVENT_RULES: list[tuple[str, tuple[str, ...]]] = [
         "состав на матч",
         "составы на матч",
         "составы на встречу",
+        "стартовые составы",
     )),
     (
         "official_statement",
@@ -110,6 +127,11 @@ EVENT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ),
     ("rumor", ("rumor", "rumour", "according to sources", "слухи", "источники сообщают", " reportedly")),
 ]
+
+# Жёсткие новости — из мем-фида не берём (по логам модерации SoccerBlog)
+MEME_HARD_EVENT_TYPES = frozenset(
+    {"transfer", "injury", "match_result", "lineup", "official_statement"}
+)
 
 OFF_TOPIC_HINTS = (
     "баскетбол",
@@ -151,20 +173,23 @@ def classify_event_rules(text: str) -> str:
 
 
 def classify_meme_event(text: str) -> str:
-    """Эвристика по тексту мема (не для отбора медиа — только аналитика/фолбэк)."""
+    """Классификация текста мем-поста: hard-news vs lifestyle."""
     blob = (text or "").lower()
     for event_type, keys in EVENT_RULES:
+        if event_type == "lifestyle":
+            # lifestyle-ключи не режут мем-фид; они слишком узкие (тату/свадьба)
+            continue
         if event_type == "match_result":
             keys = tuple(
                 k for k in keys if k.strip() not in {"—", "-", "—", "–"} and k not in {" — ", " - ", " – "}
             )
         if any(k in blob for k in keys):
             return event_type
-    return "meme"
+    return "lifestyle"
 
 
 def classify_soccerblog_event(text: str) -> str:
-    """Alias для обратной совместимости; отбор мемов идёт по медиа, не по этому."""
+    """Alias: SoccerBlog — только lifestyle после фильтра hard-news."""
     return classify_meme_event(text)
 
 

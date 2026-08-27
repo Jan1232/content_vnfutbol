@@ -116,7 +116,7 @@ def ingest_channel(channel: EditorialChannelConfig) -> int:
             if news_id:
                 update_news(news_id, last_error="rumor disabled", status="skipped")
             continue
-        # мем-источник: event_type всегда meme/lifestyle — не режем по тексту
+        # мем-источник: только lifestyle (hard-news режется ещё на parse)
         if (item.entities or {}).get("meme_source") and (item.event_type or "") not in {
             "lifestyle",
             "meme",
@@ -627,6 +627,7 @@ def _pick_with_entertainment_floor(
 def publish_ready(client: MaxClient, channel: EditorialChannelConfig) -> list[dict[str, Any]]:
     from editorial.moderation import (
         can_dispatch_review,
+        expire_stale_moderation_reviews,
         is_out_of_band_item,
         moderation_enabled,
         try_dispatch_memes,
@@ -637,6 +638,12 @@ def publish_ready(client: MaxClient, channel: EditorialChannelConfig) -> list[di
     expire_stale(channel.slug, channel.cadence.item_ttl_sec)
     ensure_slot_initialized(channel)
     results: list[dict[str, Any]] = []
+
+    if moderation_enabled(channel):
+        try:
+            results.extend(expire_stale_moderation_reviews(channel))
+        except Exception as e:
+            results.append({"action": "auto_reject_error", "error": str(e)[:200]})
 
     counts = {str(r.get("status") or ""): int(r.get("n") or 0) for r in status_counts(channel.slug)}
     stuck = top_stuck_errors(channel.slug, limit=5)

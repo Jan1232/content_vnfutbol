@@ -47,6 +47,7 @@ _UPDATABLE = {
     "media_path",
     "meme_source",
     "imagery_meta_json",
+    "awaiting_review_at",
 }
 
 
@@ -222,6 +223,29 @@ def list_ready(channel_slug: str) -> list[dict[str, Any]]:
             ORDER BY id DESC
             """,
             (channel_slug,),
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
+
+
+def list_by_status(
+    channel_slug: str,
+    statuses: list[str] | tuple[str, ...],
+    *,
+    limit: int = 30,
+) -> list[dict[str, Any]]:
+    st = [str(s) for s in statuses if str(s).strip()]
+    if not st:
+        return []
+    placeholders = ",".join("?" for _ in st)
+    with db() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT * FROM editorial_news
+            WHERE channel_slug=? AND status IN ({placeholders})
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (channel_slug, *st, int(limit)),
         ).fetchall()
         return [row_to_dict(r) for r in rows]
 

@@ -302,6 +302,7 @@ def init_db() -> None:
         _ensure_column(conn, "editorial_news", "media_path", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "editorial_news", "meme_source", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(conn, "editorial_news", "imagery_meta_json", "TEXT NOT NULL DEFAULT '{}'")
+        _ensure_column(conn, "editorial_news", "awaiting_review_at", "TEXT NOT NULL DEFAULT ''")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS editorial_moderation_session (

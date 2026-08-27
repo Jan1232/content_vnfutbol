@@ -106,9 +106,10 @@ def parse_rss_feed(feed: EditorialFeed) -> list[NewsItem]:
 
 
 def parse_telegram_meme_feed(feed: EditorialFeed) -> list[NewsItem]:
-    """TG-мем-источник: берём по факту медиа (video / meme_image), не по текст-классификатору."""
+    """TG-мем-источник: медиа + только lifestyle (трансферы/матчи/составы режем по логам модерации)."""
     from app.config import get_settings
     from parsers.telegram import parse_telegram
+    from editorial.topic_gate import MEME_HARD_EVENT_TYPES, classify_meme_event
 
     handle = (feed.handle or "").strip().lstrip("@")
     if not handle:
@@ -135,10 +136,14 @@ def parse_telegram_meme_feed(feed: EditorialFeed) -> list[NewsItem]:
             continue
         title = (post.text or post.title or feed.name or "meme").strip()[:200] or "meme"
         body = (post.text or "").strip()
+        # по логам: lifestyle→transfer/match/lineup → reject; в ленту не тащим
+        classified = classify_meme_event(f"{title}\n{body}")
+        if classified in MEME_HARD_EVENT_TYPES:
+            continue
         entities = _extract_entities(title, body)
         entities["meme_source"] = feed.name
         entities["wrap_template"] = bool(getattr(feed, "wrap_template", False))
-        # event_type фиксируем как meme — текст не должен резать отбор
+        entities["meme_text_class"] = classified
         item = NewsItem(
             external_id=_stable_id(feed.name, post.external_id),
             source=feed.name,
@@ -154,7 +159,7 @@ def parse_telegram_meme_feed(feed: EditorialFeed) -> list[NewsItem]:
                 "media_type": media_type,
                 "wrap_template": bool(getattr(feed, "wrap_template", False)),
             },
-            event_type="meme",
+            event_type="lifestyle",
             competition="",
         )
         out.append(item)

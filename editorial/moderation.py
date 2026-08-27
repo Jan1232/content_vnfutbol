@@ -3,18 +3,25 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.config import get_settings
 from app.max_api import MaxApiError, MaxClient
 from editorial.channel_config import EditorialChannelConfig, get_channel
 from editorial.content_blocks import add_content_block, is_content_blocked
 from editorial.moderation_feedback import item_snapshot, log_moderation
-from editorial.moderation_session import clear_session, upsert_session
+from editorial.moderation_session import clear_session, get_session, upsert_session
+from editorial.models import utcnow_iso
 from editorial.publisher import publish
 from editorial.scheduler import is_priority, mark_normal_published, mark_priority_published, pick_best, slot_ready
-from editorial.store import get_news, list_ready, update_news
+from editorial.store import get_news, list_by_status, list_ready, update_news
+
+
+def _now_iso() -> str:
+    return utcnow_iso()
 
 
 def moderation_enabled(cfg: EditorialChannelConfig | None = None) -> bool:
@@ -140,7 +147,7 @@ def dispatch_review_immediate(
         return {"action": "already_review", "news_id": news_id}
     if st == "published":
         return {"action": "already_published", "news_id": news_id}
-    update_news(int(news_id), status="awaiting_review", last_error="")
+    update_news(int(news_id), status="awaiting_review", last_error="", awaiting_review_at=_now_iso())
     row = get_news(int(news_id)) or row
     _send_review_card(channel, int(news_id), row)
     log_moderation(
@@ -173,7 +180,7 @@ def try_dispatch_review(
         return None
     picked = pick_best(pool) or pool[0]
     news_id = int(picked["id"])
-    update_news(news_id, status="awaiting_review", last_error="")
+    update_news(news_id, status="awaiting_review", last_error="", awaiting_review_at=_now_iso())
     row = get_news(news_id) or picked
     _send_review_card(channel, news_id, row)
     log_moderation(
@@ -282,7 +289,12 @@ def publish_approved(news_id: int) -> dict[str, Any]:
 
 def reject_post(news_id: int, *, reason: str = "manual reject") -> None:
     row = get_news(int(news_id))
-    update_news(int(news_id), status="rejected", last_error=reason[:800])
+    update_news(
+        int(news_id),
+        status="rejected",
+        last_error=reason[:800],
+        awaiting_review_at="",
+    )
     clear_session(int(news_id))
     if row:
         log_moderation(
@@ -305,6 +317,117 @@ def reject_post(news_id: int, *, reason: str = "manual reject") -> None:
                 print(f"[moderation] meme dispatch after reject fail: {e}", flush=True)
 
 
+def _parse_dt(raw: str) -> datetime | None:
+    try:
+        dt = datetime.fromisoformat(str(raw or "").replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+
+def _is_quiet_hour(local: datetime, *, quiet_start: int, quiet_end: int) -> bool:
+    """Ночь [quiet_start, 24) ∪ [0, quiet_end)."""
+    h = local.hour
+    if quiet_start >= quiet_end:
+        return h >= quiet_start or h < quiet_end
+    return quiet_start <= h < quiet_end
+
+
+def attentive_elapsed_seconds(
+    start: datetime,
+    end: datetime,
+    *,
+    tz_name: str = "Asia/Yekaterinburg",
+    quiet_start: int = 22,
+    quiet_end: int = 8,
+) -> float:
+    """Секунды между start и end в дневные часы (не ночь 22–08)."""
+    if end <= start:
+        return 0.0
+    tz = ZoneInfo(tz_name)
+    cur = start.astimezone(tz)
+    end_l = end.astimezone(tz)
+    total = 0.0
+    while cur < end_l:
+        nxt = min(cur.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1), end_l)
+        if not _is_quiet_hour(cur, quiet_start=quiet_start, quiet_end=quiet_end):
+            total += (nxt - cur).total_seconds()
+        cur = nxt
+    return total
+
+
+def expire_stale_moderation_reviews(
+    channel: EditorialChannelConfig,
+) -> list[dict[str, Any]]:
+    """Автоотклонение awaiting_review старше N минут дневного времени (не ночью Екб)."""
+    if not moderation_enabled(channel):
+        return []
+    settings = get_settings()
+    limit_min = int(getattr(settings, "moderation_auto_reject_min", 60) or 60)
+    if limit_min <= 0:
+        return []
+    tz_name = str(getattr(settings, "moderation_auto_reject_tz", None) or "Asia/Yekaterinburg")
+    quiet_start = int(getattr(settings, "moderation_quiet_start_hour", 22) or 22)
+    quiet_end = int(getattr(settings, "moderation_quiet_end_hour", 8) or 8)
+    now = datetime.now(timezone.utc)
+    try:
+        local_now = now.astimezone(ZoneInfo(tz_name))
+    except Exception:
+        local_now = now
+    if _is_quiet_hour(local_now, quiet_start=quiet_start, quiet_end=quiet_end):
+        return [{"action": "auto_reject_skipped_night", "local_hour": local_now.hour}]
+
+    threshold = limit_min * 60
+    out: list[dict[str, Any]] = []
+    rows = list_by_status(channel.slug, ("awaiting_review",), limit=50)
+    for row in rows:
+        news_id = int(row.get("id") or 0)
+        if not news_id:
+            continue
+        started = _parse_dt(str(row.get("awaiting_review_at") or "")) or _parse_dt(
+            str(row.get("updated_at") or "")
+        )
+        if not started:
+            continue
+        elapsed = attentive_elapsed_seconds(
+            started,
+            now,
+            tz_name=tz_name,
+            quiet_start=quiet_start,
+            quiet_end=quiet_end,
+        )
+        if elapsed < threshold:
+            continue
+        # сессия до clear — для finalize карточки
+        sess = get_session(news_id)
+        reason = f"auto reject: no decision in {limit_min}m (daytime {tz_name})"
+        reject_post(news_id, reason=reason)
+        try:
+            msg_id = int((sess or {}).get("tg_message_id") or 0)
+            chat_id = (sess or {}).get("tg_chat_id") or get_settings().telegram_admin_id
+            if msg_id and chat_id:
+                from editorial.tg_moderator.notify import finalize_review_card
+
+                fresh = get_news(news_id) or row
+                finalize_review_card(
+                    chat_id,
+                    msg_id,
+                    fresh,
+                    channel,
+                    "rejected",
+                    detail="авто: нет решения за час",
+                )
+        except Exception as e:
+            print(f"[moderation] auto-reject finalize fail #{news_id}: {e}", flush=True)
+        out.append(
+            {"action": "auto_rejected", "news_id": news_id, "elapsed_min": int(elapsed // 60)}
+        )
+        print(f"[moderation] auto-reject #{news_id} after {elapsed/60:.0f}m daytime", flush=True)
+    return out
+
+
 def mark_unacceptable(news_id: int, reason: str, *, note: str = "") -> dict[str, Any]:
     row = get_news(int(news_id))
     if not row:
@@ -314,6 +437,7 @@ def mark_unacceptable(news_id: int, reason: str, *, note: str = "") -> dict[str,
         int(news_id),
         status="rejected",
         last_error=f"unacceptable:{reason}"[:800],
+        awaiting_review_at="",
     )
     clear_session(int(news_id))
     log_moderation(

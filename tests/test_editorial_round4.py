@@ -74,7 +74,7 @@ class SessionInputRoutingTests(unittest.TestCase):
 
 
 class MemeMediaSelectTests(unittest.TestCase):
-    def test_transfer_text_video_taken_as_meme(self):
+    def test_transfer_text_video_skipped(self):
         from editorial.sources import parse_telegram_meme_feed
 
         feed = EditorialFeed(
@@ -84,7 +84,7 @@ class MemeMediaSelectTests(unittest.TestCase):
             take_only=("video", "meme_image"),
         )
         post = SimpleNamespace(
-            text="Трансфер Батракова в Галатасарай — официально",
+            text="ХИРВИГОУ: Батраков едет в аренду с опцией выкупа за 35 миллионов евро",
             title="",
             external_id="tg1",
             source_url="https://t.me/x/1",
@@ -96,9 +96,33 @@ class MemeMediaSelectTests(unittest.TestCase):
             patch("editorial.sources._extract_entities", return_value={}),
         ):
             items = parse_telegram_meme_feed(feed)
+        self.assertEqual(items, [])
+
+    def test_lifestyle_meme_kept(self):
+        from editorial.sources import parse_telegram_meme_feed
+
+        feed = EditorialFeed(
+            name="soccerblog_memes",
+            kind="telegram",
+            handle="thesoccerblogteam",
+            take_only=("video", "meme_image"),
+        )
+        post = SimpleNamespace(
+            text="Тем временем Холланд окончательно поплыл и сбрил шевелюру",
+            title="",
+            external_id="tg2",
+            source_url="https://t.me/x/2",
+            media=[{"type": "image", "url": "https://example.com/i.jpg"}],
+        )
+        with (
+            patch("app.config.get_settings", return_value=MagicMock(meme_source_enabled=True)),
+            patch("parsers.telegram.parse_telegram", return_value=("ch", [post])),
+            patch("editorial.sources._extract_entities", return_value={}),
+        ):
+            items = parse_telegram_meme_feed(feed)
         self.assertEqual(len(items), 1)
-        self.assertEqual(items[0].event_type, "meme")
-        self.assertEqual(items[0].raw.get("post_kind"), "video")
+        self.assertEqual(items[0].event_type, "lifestyle")
+        self.assertEqual(items[0].raw.get("post_kind"), "meme")
 
 
 class QueueDepthTests(unittest.TestCase):

@@ -407,11 +407,24 @@ def handle_message(update: dict[str, Any]) -> None:
         return
     text = str(msg.get("text") or "").strip()
     if not text or text.startswith("/"):
-        if text in {"/start", "/help"}:
+        cmd = text.split()[0].split("@")[0].lower() if text else ""
+        if cmd in {"/start", "/help"}:
             api.send_message(
                 user_id,
-                "Модерация editorial: ждите карточки готовых постов. Кнопки — под превью.",
+                "Модерация editorial.\n"
+                "Карточки приходят с кнопками.\n"
+                "/story — очередь и статус системы.",
             )
+            return
+        if cmd == "/story":
+            from editorial.tg_moderator.story_status import build_story_report
+
+            try:
+                report = build_story_report()
+            except Exception as e:
+                report = f"Не удалось собрать /story: {e}"
+            api.send_message(user_id, report)
+            return
         return
     chat_id = msg.get("chat", {}).get("id") or user_id
     reply = msg.get("reply_to_message") or {}
