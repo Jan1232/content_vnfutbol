@@ -118,10 +118,11 @@ class Settings(BaseSettings):
     story_min_gap_min: int = 180
     # meme / video source
     meme_source_enabled: bool = True
-    meme_source_max_per_day: int = 0  # 0 = без лимита
+    meme_source_max_per_day: int = 5  # 0 = без лимита; дефолт дозирует мем-ленту
     meme_wrap_template: bool = False
     entertainment_floor_ratio: float = 0.20
     profanity_filter: str = "strict"
+    moderation_queue_depth: int = 3
     video_max_mb: int = 250
     image_search_backend: str = "yandex"
     image_search_api_key: str = ""

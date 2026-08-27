@@ -9,6 +9,7 @@ EVENT_TYPE_LABELS: dict[str, str] = {
     "official_statement": "📢 Официально",
     "lineup": "📋 Составы на матч",
     "lifestyle": "👤 Lifestyle",
+    "meme": "🎬 Мем / видео",
     "rumor": "👀 Слух",
     "other": "📰 Другое",
     "fixture_result": "⚽ Счёт (API)",
@@ -30,6 +31,7 @@ def moderation_event_types(allowed: list[str] | tuple[str, ...] | None) -> list[
         "official_statement",
         "lineup",
         "lifestyle",
+        "meme",
         "rumor",
     )
     allowed_set = set(allowed or ())

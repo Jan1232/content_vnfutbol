@@ -128,6 +128,17 @@ def story_key(item: NewsItem | dict[str, Any]) -> str:
     et = _event_type(item)
     players = [_slug_entity(str(p)) for p in (entities.get("players") or []) if str(p).strip()]
     players = [p for p in players if p]
+    # если entities пусты — вытащить игрока из текста (иначе Батраков×N не схлопнется)
+    if not players:
+        blob_n = norm_name(blob)
+        for alias, canon in sorted(load_players().items(), key=lambda kv: len(kv[0]), reverse=True):
+            if len(alias) < 4:
+                continue
+            if alias in blob_n:
+                slug = _player_slug(canon)
+                if slug:
+                    players = [slug]
+                    break
     teams = sorted(
         {_slug_entity(str(t)) for t in (entities.get("teams") or []) if str(t).strip()}
     )

@@ -150,8 +150,8 @@ def classify_event_rules(text: str) -> str:
     return "other"
 
 
-def classify_soccerblog_event(text: str) -> str:
-    """Для SoccerBlog: без эвристик счёта по «—»/«-» (ломают мемы)."""
+def classify_meme_event(text: str) -> str:
+    """Эвристика по тексту мема (не для отбора медиа — только аналитика/фолбэк)."""
     blob = (text or "").lower()
     for event_type, keys in EVENT_RULES:
         if event_type == "match_result":
@@ -160,7 +160,12 @@ def classify_soccerblog_event(text: str) -> str:
             )
         if any(k in blob for k in keys):
             return event_type
-    return "lifestyle"
+    return "meme"
+
+
+def classify_soccerblog_event(text: str) -> str:
+    """Alias для обратной совместимости; отбор мемов идёт по медиа, не по этому."""
+    return classify_meme_event(text)
 
 
 

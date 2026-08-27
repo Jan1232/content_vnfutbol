@@ -106,8 +106,8 @@ def parse_rss_feed(feed: EditorialFeed) -> list[NewsItem]:
 
 
 def parse_telegram_meme_feed(feed: EditorialFeed) -> list[NewsItem]:
-    """TG-канал: только video / meme_image."""
-    from app.config import ROOT, get_settings
+    """TG-мем-источник: берём по факту медиа (video / meme_image), не по текст-классификатору."""
+    from app.config import get_settings
     from parsers.telegram import parse_telegram
 
     handle = (feed.handle or "").strip().lstrip("@")
@@ -133,16 +133,12 @@ def parse_telegram_meme_feed(feed: EditorialFeed) -> list[NewsItem]:
             post_kind = "meme"
         else:
             continue
-        title = (post.text or post.title or "SoccerBlog").strip()[:200] or "SoccerBlog"
+        title = (post.text or post.title or feed.name or "meme").strip()[:200] or "meme"
         body = (post.text or "").strip()
         entities = _extract_entities(title, body)
         entities["meme_source"] = feed.name
-        from editorial.topic_gate import classify_soccerblog_event
-
-        event_type = classify_soccerblog_event(f"{title}\n{body}")
-        # SoccerBlog — только lifestyle-мемы; трансфер/состав/результат отсекаем
-        if event_type != "lifestyle":
-            continue
+        entities["wrap_template"] = bool(getattr(feed, "wrap_template", False))
+        # event_type фиксируем как meme — текст не должен резать отбор
         item = NewsItem(
             external_id=_stable_id(feed.name, post.external_id),
             source=feed.name,
@@ -152,18 +148,30 @@ def parse_telegram_meme_feed(feed: EditorialFeed) -> list[NewsItem]:
             lang="ru",
             published_at=datetime.now(timezone.utc),
             entities=entities,
-            raw={"media": media, "post_kind": post_kind, "media_type": media_type},
-            event_type=event_type,
+            raw={
+                "media": media,
+                "post_kind": post_kind,
+                "media_type": media_type,
+                "wrap_template": bool(getattr(feed, "wrap_template", False)),
+            },
+            event_type="meme",
             competition="",
         )
         out.append(item)
     return out
 
 
+# Точка расширения: позже vk / instagram_export / rss_meme без переписывания fetch_feed.
+MEME_SOURCE_PARSERS: dict[str, Any] = {
+    "telegram": parse_telegram_meme_feed,
+}
+
+
 def fetch_feed(feed: EditorialFeed) -> list[NewsItem]:
     kind = (feed.kind or "rss").lower()
-    if kind == "telegram":
-        return parse_telegram_meme_feed(feed)
+    parser = MEME_SOURCE_PARSERS.get(kind)
+    if parser is not None:
+        return parser(feed)
     if kind in {"rss", "atom"}:
         return parse_rss_feed(feed)
     if kind == "api":

@@ -311,6 +311,7 @@ def init_db() -> None:
               step            TEXT NOT NULL DEFAULT 'idle',
               tg_chat_id      TEXT NOT NULL DEFAULT '',
               tg_message_id   INTEGER NOT NULL DEFAULT 0,
+              prompt_message_id INTEGER NOT NULL DEFAULT 0,
               draft_text      TEXT NOT NULL DEFAULT '',
               photo_query     TEXT NOT NULL DEFAULT '',
               photo_pool_json TEXT NOT NULL DEFAULT '[]',
@@ -318,6 +319,7 @@ def init_db() -> None:
             )
             """
         )
+        _ensure_column(conn, "editorial_moderation_session", "prompt_message_id", "INTEGER NOT NULL DEFAULT 0")
         conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_mod_session_news

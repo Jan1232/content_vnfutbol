@@ -370,6 +370,7 @@ def editorial_page(request: Request):
         list_today_fixtures,
         recent_published,
         status_counts,
+        top_stuck_errors,
     )
     from editorial.usage import daily_usage_summary
 
@@ -409,6 +410,7 @@ def editorial_page(request: Request):
                 "runtime_enabled": _channel_enabled(cfg),
                 "dry_run": cfg.dry_run,
                 "counts": {r["status"]: r["n"] for r in counts_rows},
+                "stuck_errors": top_stuck_errors(cfg.slug, limit=5),
                 "recent": recent_published(cfg.slug, limit=5),
                 "covers": list_covers(cfg.slug, limit=24),
                 "fixtures_today": fixtures_today,

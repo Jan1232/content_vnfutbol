@@ -116,8 +116,11 @@ def ingest_channel(channel: EditorialChannelConfig) -> int:
             if news_id:
                 update_news(news_id, last_error="rumor disabled", status="skipped")
             continue
-        # SoccerBlog: только lifestyle-мемы (не трансфер/результат/состав)
-        if (item.entities or {}).get("meme_source") and (item.event_type or "") != "lifestyle":
+        # мем-источник: event_type всегда meme/lifestyle — не режем по тексту
+        if (item.entities or {}).get("meme_source") and (item.event_type or "") not in {
+            "lifestyle",
+            "meme",
+        }:
             continue
         allowed_types = set(channel.event_types or ())
         if allowed_types and item.event_type not in allowed_types and item.event_type != "other":
@@ -271,7 +274,7 @@ def _step_topic(channel: EditorialChannelConfig, row: dict[str, Any]) -> str:
             news_id,
             status="verifying",
             topic_status="football",
-            event_type=row.get("event_type") or "lifestyle",
+            event_type=row.get("event_type") or "meme",
             cluster_id=cluster_id,
             last_error="",
         )
@@ -589,7 +592,7 @@ def _is_entertainment(row: dict[str, Any]) -> bool:
         return True
     if int(row.get("meme_source") or 0):
         return True
-    if (row.get("event_type") or "") == "lifestyle":
+    if (row.get("event_type") or "") in {"lifestyle", "meme", "human_factor"}:
         return True
     from editorial.pick import pick_tag_of
 
@@ -624,28 +627,68 @@ def _pick_with_entertainment_floor(
 def publish_ready(client: MaxClient, channel: EditorialChannelConfig) -> list[dict[str, Any]]:
     from editorial.moderation import (
         can_dispatch_review,
+        is_out_of_band_item,
         moderation_enabled,
         try_dispatch_memes,
         try_dispatch_review,
     )
+    from editorial.store import status_counts, top_stuck_errors
 
     expire_stale(channel.slug, channel.cadence.item_ttl_sec)
     ensure_slot_initialized(channel)
     results: list[dict[str, Any]] = []
+
+    counts = {str(r.get("status") or ""): int(r.get("n") or 0) for r in status_counts(channel.slug)}
+    stuck = top_stuck_errors(channel.slug, limit=5)
+    print(
+        f"[editorial] status {channel.slug}: "
+        f"held={counts.get('held', 0)} imaging={counts.get('imaging', 0)} "
+        f"verifying={counts.get('verifying', 0)} ready={counts.get('ready', 0)} "
+        f"awaiting_review={counts.get('awaiting_review', 0)} "
+        f"stuck_errors={stuck}",
+        flush=True,
+    )
+    results.append({"action": "status_snapshot", "counts": counts, "stuck_errors": stuck})
+
+    auto_types = {str(x) for x in (channel.moderation.auto_publish_types or ()) if str(x)}
+    if auto_types and moderation_enabled(channel):
+        for item in list_ready(channel.slug):
+            et = str(item.get("event_type") or "")
+            if et not in auto_types or is_out_of_band_item(item):
+                continue
+            try:
+                res = publish(client, channel, item)
+                if res.get("action") in {"published", "simulated"}:
+                    if is_priority(item, channel):
+                        mark_priority_published(channel)
+                    else:
+                        mark_normal_published(channel)
+                res["auto_publish"] = True
+                results.append(res)
+            except Exception as e:
+                update_news(int(item["id"]), status="error", last_error=str(e)[:800])
+                results.append(
+                    {"action": "auto_publish_error", "id": item.get("id"), "error": str(e)[:200]}
+                )
 
     if moderation_enabled(channel):
         try:
             results.extend(try_dispatch_memes(channel))
         except Exception as e:
             results.append({"action": "meme_review_error", "error": str(e)[:200]})
-        if can_dispatch_review(channel):
+        # до queue_depth карточек в боте
+        while can_dispatch_review(channel):
             try:
                 disp = try_dispatch_review(channel)
-                if disp:
-                    results.append(disp)
+                if not disp:
+                    break
+                results.append(disp)
             except Exception as e:
                 results.append({"action": "review_error", "error": str(e)[:200]})
-        if not results:
+                break
+        if not any(
+            r.get("action") in {"dispatched_review", "dispatched_review_immediate"} for r in results
+        ):
             results.append({"action": "awaiting_moderation", "slug": channel.slug})
         return results
 

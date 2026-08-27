@@ -20,8 +20,10 @@ from editorial.moderation import (
 )
 from editorial.moderation_feedback import log_moderation
 from editorial.moderation_session import (
-    get_active_session_for_admin,
+    clear_input_step,
+    get_awaiting_input_session,
     get_session,
+    get_session_by_prompt_message,
     photo_pool_from_session,
     upsert_session,
 )
@@ -102,6 +104,13 @@ def handle_callback(update: dict[str, Any]) -> None:
         api.answer_callback(cb_id, "Пост не найден", show_alert=True)
         return
 
+    if row and action in {"ok", "no", "bad", "badr", "txt", "photo", "pick", "cat", "catr"}:
+        st = str(row.get("status") or "")
+        sess = get_session(news_id)
+        if st == "published" or (sess and str(sess.get("step") or "") == "done"):
+            api.answer_callback(cb_id, "Карточка устарела", show_alert=True)
+            return
+
     if action == "ok":
         msg_id = _card_message_id(cb)
         cfg = _channel_for_row(row)
@@ -152,11 +161,19 @@ def handle_callback(update: dict[str, Any]) -> None:
         return
 
     if action == "txt":
-        upsert_session(news_id, admin_id=_admin_id(), step="edit_text", tg_chat_id=chat_id)
+        clear_input_step(_admin_id(), except_news_id=news_id)
         api.answer_callback(cb_id)
-        api.send_message(
+        prompt = api.send_message(
             chat_id,
-            f"✏️ Пришлите новый текст для #{news_id} (стикер в начале абзаца).",
+            f"✏️ Пришлите новый текст для #{news_id} (стикер в начале абзаца).\n"
+            f"Ответьте reply на это сообщение.",
+        )
+        upsert_session(
+            news_id,
+            admin_id=_admin_id(),
+            step="edit_text",
+            tg_chat_id=chat_id,
+            prompt_message_id=int(prompt.get("message_id") or 0),
         )
         return
 
@@ -164,9 +181,20 @@ def handle_callback(update: dict[str, Any]) -> None:
         if row and not allow_photo_button(row):
             api.answer_callback(cb_id, "Для video/meme запрос фото недоступен", show_alert=True)
             return
-        upsert_session(news_id, admin_id=_admin_id(), step="photo_query", tg_chat_id=chat_id)
+        clear_input_step(_admin_id(), except_news_id=news_id)
         api.answer_callback(cb_id)
-        api.send_message(chat_id, f"🔍 Введите поисковый запрос для фото (#{news_id}):")
+        prompt = api.send_message(
+            chat_id,
+            f"🔍 Введите поисковый запрос для фото (#{news_id}):\n"
+            f"Ответьте reply на это сообщение.",
+        )
+        upsert_session(
+            news_id,
+            admin_id=_admin_id(),
+            step="photo_query",
+            tg_chat_id=chat_id,
+            prompt_message_id=int(prompt.get("message_id") or 0),
+        )
         return
 
     if action == "pick":
@@ -385,20 +413,41 @@ def handle_message(update: dict[str, Any]) -> None:
                 "Модерация editorial: ждите карточки готовых постов. Кнопки — под превью.",
             )
         return
-    session = get_active_session_for_admin(_admin_id())
+    chat_id = msg.get("chat", {}).get("id") or user_id
+    reply = msg.get("reply_to_message") or {}
+    reply_mid = 0
+    try:
+        reply_mid = int(reply.get("message_id") or 0)
+    except (TypeError, ValueError):
+        reply_mid = 0
+
+    session = None
+    if reply_mid:
+        session = get_session_by_prompt_message(_admin_id(), reply_mid)
     if not session:
-        api.send_message(user_id, "Нет активного шага. Ждите карточку поста.")
+        session = get_awaiting_input_session(_admin_id())
+    if not session:
+        api.send_message(
+            chat_id,
+            "Нажмите кнопку под нужным постом ещё раз (✏️/🔍), затем ответьте reply на запрос бота.",
+        )
         return
+
     news_id = int(session.get("news_id") or 0)
     step = str(session.get("step") or "")
-    chat_id = msg.get("chat", {}).get("id") or user_id
 
     if step == "edit_text":
         ok, why = save_edited_text(news_id, text)
         if not ok:
             api.send_message(chat_id, f"Текст не принят: {why}", parse_mode=None)
             return
-        upsert_session(news_id, admin_id=_admin_id(), step="review", tg_chat_id=chat_id)
+        upsert_session(
+            news_id,
+            admin_id=_admin_id(),
+            step="review",
+            tg_chat_id=chat_id,
+            prompt_message_id=0,
+        )
         api.send_message(chat_id, f"Текст обновлён для #{news_id}")
         _refresh_card(news_id, chat_id)
         return
@@ -407,7 +456,10 @@ def handle_message(update: dict[str, Any]) -> None:
         _build_photo_pool(news_id, text, chat_id)
         return
 
-    api.send_message(chat_id, "Не понял. Используйте кнопки под карточкой поста.")
+    api.send_message(
+        chat_id,
+        "Нажмите кнопку под нужным постом ещё раз, затем введите текст reply на запрос.",
+    )
 
 
 def process_update(update: dict[str, Any]) -> None:

@@ -22,6 +22,16 @@ class EditorialFeed:
     take_only: tuple[str, ...] = ()
     rewrite_text: bool = False
     profanity_gate: str = ""
+    max_per_day: int = 0  # 0 = fallback на глобальный meme_source_max_per_day
+    wrap_template: bool = False
+
+
+@dataclass(frozen=True)
+class ModerationConfig:
+    """Очередь TG-модерации."""
+
+    queue_depth: int = 3
+    auto_publish_types: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -82,11 +92,13 @@ class EditorialChannelConfig:
         "match_result",
         "official_statement",
         "lifestyle",
+        "meme",
     )
     allow_rumors: bool = False
     factcheck_min_sources: int = 2
     image_rights_ack: bool = False
     cadence: CadenceConfig = field(default_factory=CadenceConfig)
+    moderation: ModerationConfig = field(default_factory=ModerationConfig)
     always_priority_teams: tuple[str, ...] = ("Russia",)
     template_map: tuple[tuple[str, str], ...] = ()
     brand: EditorialBrand = field(default_factory=EditorialBrand)
@@ -135,6 +147,9 @@ def _parse_feeds(raw: Any) -> tuple[EditorialFeed, ...]:
             continue
         kind = str(item.get("kind") or "rss").strip().lower()
         name = str(item.get("name") or item.get("url") or item.get("endpoint") or kind)
+        is_meme_tg = kind == "telegram"
+        rewrite_default = True if is_meme_tg else False
+        profanity_default = "strict" if is_meme_tg else ""
         out.append(
             EditorialFeed(
                 name=name,
@@ -143,11 +158,24 @@ def _parse_feeds(raw: Any) -> tuple[EditorialFeed, ...]:
                 endpoint=str(item.get("endpoint") or ""),
                 handle=str(item.get("handle") or ""),
                 take_only=tuple(str(x) for x in (item.get("take_only") or ())),
-                rewrite_text=_as_bool(item.get("rewrite_text"), False),
-                profanity_gate=str(item.get("profanity_gate") or ""),
+                rewrite_text=_as_bool(item.get("rewrite_text"), rewrite_default),
+                profanity_gate=str(item.get("profanity_gate") or profanity_default),
+                max_per_day=int(item.get("max_per_day") or 0),
+                wrap_template=_as_bool(item.get("wrap_template"), False),
             )
         )
     return tuple(out)
+
+
+def _parse_moderation(raw: Any, settings: Any) -> ModerationConfig:
+    data = raw if isinstance(raw, dict) else {}
+    depth = data.get("queue_depth")
+    if depth is None:
+        depth = getattr(settings, "moderation_queue_depth", 3)
+    return ModerationConfig(
+        queue_depth=max(1, int(depth or 3)),
+        auto_publish_types=_as_tuple(data.get("auto_publish_types"), ()),
+    )
 
 
 def _parse_cadence(raw: Any, settings: Any) -> CadenceConfig:
@@ -184,7 +212,7 @@ def _parse(data: dict[str, Any]) -> EditorialChannelConfig | None:
         competitions=tuple(c.upper() for c in _as_tuple(data.get("competitions"), ())),
         event_types=_as_tuple(
             data.get("event_types"),
-            ("transfer", "injury", "match_result", "official_statement", "lifestyle"),
+            ("transfer", "injury", "match_result", "official_statement", "lifestyle", "meme"),
         ),
         allow_rumors=_as_bool(data.get("allow_rumors"), False),
         factcheck_min_sources=int(
@@ -192,6 +220,7 @@ def _parse(data: dict[str, Any]) -> EditorialChannelConfig | None:
         ),
         image_rights_ack=_as_bool(data.get("image_rights_ack"), False),
         cadence=_parse_cadence(data.get("cadence"), settings),
+        moderation=_parse_moderation(data.get("moderation"), settings),
         always_priority_teams=always,
         template_map=tuple((str(k), str(v)) for k, v in tmap.items()),
         brand=EditorialBrand(

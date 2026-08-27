@@ -63,7 +63,7 @@ class ModerationFlowTests(unittest.TestCase):
             "id": 99,
             "meme_source": 1,
             "post_kind": "meme",
-            "event_type": "lifestyle",
+            "event_type": "meme",
             "cover_path": "/tmp/x.jpg",
             "media_path": "/tmp/x.jpg",
         }

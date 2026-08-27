@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from editorial.channel_config import CadenceConfig, EditorialChannelConfig
 from editorial.scheduler import is_priority, pick_best, random_gap_minutes
@@ -124,6 +124,30 @@ class SchedulerTests(unittest.TestCase):
         b = _item(id=2, teams_json='["Liverpool", "Everton"]')
         picked = pick_best([a, b])
         self.assertEqual(picked["id"], 2)
+
+    def test_slot_idle_does_not_move_timer_via_publish_ready(self):
+        """Пустой ready при наступившем слоте → slot_idle, таймер не двигаем."""
+        from editorial.cycle import publish_ready
+
+        cfg = EditorialChannelConfig(
+            slug="test_idle",
+            chat_id=-1,
+            moderate_before_publish=False,
+        )
+        client = MagicMock()
+        with (
+            patch("editorial.cycle.expire_stale"),
+            patch("editorial.cycle.ensure_slot_initialized"),
+            patch("editorial.moderation.moderation_enabled", return_value=False),
+            patch("editorial.cycle.list_ready", return_value=[]),
+            patch("editorial.cycle.slot_ready", return_value=True),
+            patch("editorial.cycle.mark_normal_published") as mark,
+            patch("editorial.store.status_counts", return_value=[]),
+            patch("editorial.store.top_stuck_errors", return_value=[]),
+        ):
+            out = publish_ready(client, cfg)
+        self.assertTrue(any(r.get("action") == "slot_idle" for r in out))
+        mark.assert_not_called()
 
 
 if __name__ == "__main__":

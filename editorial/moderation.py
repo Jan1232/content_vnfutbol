@@ -89,7 +89,8 @@ def can_dispatch_review(
     *,
     force: bool = False,
 ) -> bool:
-    if count_awaiting_review(channel.slug, regular_only=True) > 0:
+    depth = max(1, int(getattr(channel.moderation, "queue_depth", 3) or 3))
+    if count_awaiting_review(channel.slug, regular_only=True) >= depth:
         return False
     pool = _ready_pool(channel)
     # обычная очередь — без fixture_result и мемов
@@ -157,7 +158,7 @@ def try_dispatch_review(
     *,
     force: bool = False,
 ) -> dict[str, Any] | None:
-    """Один пост в awaiting_review, когда слот/приоритет готов и очередь пуста.
+    """Один пост в awaiting_review, пока count < queue_depth и слот/приоритет готов.
 
     force=True — сразу после reject/unacceptable (без ожидания cadence 40–55 мин).
     Мемы и fixture_result сюда не входят — см. try_dispatch_memes / dispatch_review_immediate.
@@ -196,9 +197,7 @@ def try_dispatch_memes(
     pool = [
         i
         for i in _ready_pool(channel)
-        if is_out_of_band_item(i)
-        and (i.get("event_type") or "") != "fixture_result"
-        and (i.get("event_type") or "lifestyle") == "lifestyle"
+        if is_out_of_band_item(i) and (i.get("event_type") or "") != "fixture_result"
     ]
     # старые сверху — не копить «хвост»
     pool = list(reversed(pool))[: max(1, int(limit or 10))]

@@ -72,20 +72,52 @@ def get_by_external(channel_slug: str, external_id: str) -> dict[str, Any] | Non
         return row_to_dict(row) if row else None
 
 
-def count_meme_source_today(channel_slug: str, *, day: str) -> int:
+def count_meme_source_today(
+    channel_slug: str, *, day: str, source: str | None = None
+) -> int:
     with db() as conn:
-        row = conn.execute(
-            """
-            SELECT COUNT(*) AS n FROM editorial_news
-            WHERE channel_slug=? AND meme_source=1
-              AND substr(created_at, 1, 10)=?
-            """,
-            (channel_slug, day),
-        ).fetchone()
+        if source:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM editorial_news
+                WHERE channel_slug=? AND meme_source=1
+                  AND source=?
+                  AND substr(created_at, 1, 10)=?
+                """,
+                (channel_slug, source, day),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM editorial_news
+                WHERE channel_slug=? AND meme_source=1
+                  AND substr(created_at, 1, 10)=?
+                """,
+                (channel_slug, day),
+            ).fetchone()
     try:
         return int(row["n"] or 0) if row else 0
     except (TypeError, ValueError):
         return 0
+
+
+def top_stuck_errors(channel_slug: str, *, limit: int = 5) -> list[dict[str, Any]]:
+    """Топ last_error среди застрявших (held/imaging/verifying)."""
+    with db() as conn:
+        rows = conn.execute(
+            """
+            SELECT last_error, COUNT(*) AS n
+            FROM editorial_news
+            WHERE channel_slug=?
+              AND status IN ('held', 'imaging', 'verifying')
+              AND TRIM(COALESCE(last_error, '')) != ''
+            GROUP BY last_error
+            ORDER BY n DESC
+            LIMIT ?
+            """,
+            (channel_slug, int(limit)),
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
 
 
 def insert_news(payload: dict[str, Any]) -> int | None:

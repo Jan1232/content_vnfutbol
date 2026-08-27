@@ -30,13 +30,27 @@ feeds:
     take_only: [video, meme_image]
     rewrite_text: true
     profanity_gate: strict
+    max_per_day: 5
+    wrap_template: false
+    # Новый мем-канал — только YAML (handle + take_only + max_per_day), код не трогать:
+    # - name: <name>
+    #   kind: telegram
+    #   handle: <handle>
+    #   take_only: [video, meme_image]
+    #   rewrite_text: true
+    #   profanity_gate: strict
+    #   max_per_day: 5
 
 competitions: [PL, PD, SA, CL, EL, RPL, BL, FL1, WC, EC, UNL, NT]
-event_types: [transfer, injury, match_result, official_statement, lineup, lifestyle]
+event_types: [transfer, injury, match_result, official_statement, lineup, lifestyle, meme]
 allow_rumors: false
 factcheck_min_sources: 2
 # Юридический флаг: внешние фото из поисковой выдачи. Без true пост уходит в held.
 image_rights_ack: true
+
+moderation:
+  queue_depth: 3
+  # auto_publish_types: [matchday, fixture_result]  # опционально, по умолчанию всё через бот
 
 cadence:
   min_gap_min: 40
@@ -54,6 +68,7 @@ template_map:
   official_statement: breaking
   lineup: default
   lifestyle: default
+  # meme: без шаблона — готовое медиа (видео/картинка)
 
 brand:
   name: "ВСЕ НА ФУТБОЛ"

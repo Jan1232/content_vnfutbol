@@ -73,15 +73,17 @@ def fetch_fresh_news(channel: EditorialChannelConfig) -> list[NewsItem]:
                     continue
             batch.append(item)
 
-        if (feed.kind or "").lower() == "telegram" and batch:
+        if (feed.kind or "").lower() in {"telegram"} and batch:
             from editorial.story_throttle import channel_day
             from editorial.store import count_meme_source_today
 
-            # 0 / отрицательное = без дневного лимита (мемы не теряем)
-            cap = int(getattr(settings, "meme_source_max_per_day", 0) or 0)
+            # per-feed max_per_day, иначе глобальный; 0 у обоих = без лимита
+            cap = int(getattr(feed, "max_per_day", 0) or 0)
+            if cap <= 0:
+                cap = int(getattr(settings, "meme_source_max_per_day", 5) or 0)
             if cap > 0:
                 day = channel_day()
-                used = count_meme_source_today(channel.slug, day=day)
+                used = count_meme_source_today(channel.slug, day=day, source=feed.name)
                 left = max(0, cap - used)
                 if left <= 0:
                     batch = []
