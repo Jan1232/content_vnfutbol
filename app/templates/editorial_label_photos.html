@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Разметка фото — MAX Repost{% endblock %}
+{% block body %}
+<div class="shell-bar">
+  <div class="shell-brand">
+    <div class="shell-logo" aria-hidden="true"></div>
+    <div class="shell-brand-text">
+      <div class="shell-brand-name">MAX Repost</div>
+      <div class="shell-brand-sub">Разметка фото (временно)</div>
+    </div>
+  </div>
+  <div class="shell-actions">
+    <a class="ghost small" href="/editorial">← Editorial</a>
+    <a class="ghost small" href="/editorial/label-photos/summary">Сводка</a>
+    <form method="post" action="/logout">
+      <button type="submit" class="ghost small">Выйти</button>
+    </form>
+  </div>
+</div>
+
+{% if done %}
+<header class="top">
+  <div class="top-copy">
+    <p class="page-kicker">Готово</p>
+    <h1>Все карточки размечены</h1>
+    <p class="muted">{{ progress.done }} / {{ progress.total }} · согласие с моделью {{ comparison.agree_pct }}%</p>
+  </div>
+</header>
+<p class="muted">Исходные: <code>data/editorial/labeling/imagery_4d/pool.json</code></p>
+<p class="muted">Разметка: <code>data/editorial/labeling/imagery_4d/labels.json</code></p>
+<p class="muted">Сверка: <code>data/editorial/labeling/imagery_4d/comparison.json</code></p>
+<p class="muted">Правила: <code>editorial/rules_imagery.yaml</code></p>
+<p><a class="ghost" href="/editorial/label-photos?id={{ first_id }}">Смотреть с начала</a></p>
+{% else %}
+<header class="top">
+  <div class="top-copy">
+    <p class="page-kicker">{{ view.id }} · {{ view.progress.done }} / {{ view.progress.total }}</p>
+    <h1>{{ view.news.title }}</h1>
+    <p class="muted">{{ view.news.event_type or '—' }}{% if view.news.entities.players %} · {{ view.news.entities.players|join(', ') }}{% endif %}{% if view.news.entities.teams %} · {{ view.news.entities.teams|join(', ') }}{% endif %}</p>
+  </div>
+</header>
+
+<div class="label-layout">
+  <section class="label-main">
+    <div class="label-card-stage" id="label-card-stage" data-w="{{ view.card.width }}" data-h="{{ view.card.height }}" style="--card-w: {{ view.card.width }}; --card-h: {{ view.card.height }}">
+      <iframe id="label-preview" title="Превью карточки" src="/editorial/label-photos/card/{{ view.id }}"></iframe>
+      {% if not view.has_photo %}
+      <div class="label-card-empty" id="label-empty">Модель не выбрала фото</div>
+      {% endif %}
+    </div>
+    <p class="muted label-card-meta">как в MAX · шаблон {{ view.card.template }} · кадр кропается в размер шаблона, без растягивания</p>
+    <div class="label-thought">
+      <div class="title">Модель</div>
+      <div class="sub">запрос модели: {{ view.query or '—' }}</div>
+      <div class="detail">{{ view.thought.who or '—' }} — {{ view.thought.reason or view.outcome }}{% if view.thought.score is not none %} · {{ '%.2f'|format(view.thought.score) }}{% endif %}</div>
+      {% if view.labeled %}
+      <div class="detail">уже размечено: {{ view.labeled.decision }}{% if view.labeled.note %} · {{ view.labeled.note }}{% endif %}</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="label-side">
+    <div class="title">Другие кадры (модель отвергла или не взяла первыми)</div>
+    <p class="muted" style="margin:6px 0 12px">Клик — подставить в карточку. Затем «Принять» или «Ни одна не подходит».</p>
+    <ul class="label-cands" id="label-cands">
+      {% for c in view.candidates %}
+      <li>
+        <button type="button" class="label-cand{% if c.is_pick %} is-pick{% endif %}" data-idx="{{ c.idx }}" data-pick="{{ '1' if c.is_pick else '0' }}" data-src="{% if c.is_pick and view.has_photo %}/editorial/label-photos/fitted/{{ view.id }}{% elif c.has_file %}/editorial/label-photos/fitted/{{ view.id }}/{{ c.idx }}{% endif %}" {% if not c.has_file and not c.is_pick %}disabled{% endif %}>
+          {% if c.is_pick and view.has_photo %}
+          <img src="/editorial/label-photos/photo/{{ view.id }}" alt="" />
+          {% elif c.has_file %}
+          <img src="/editorial/label-photos/cand/{{ view.id }}/{{ c.idx }}" alt="" />
+          {% else %}
+          <span class="muted">нет файла</span>
+          {% endif %}
+          <span class="label-cand-meta">
+            {% if c.is_pick %}выбор модели · {% endif %}{{ c.via }}{% if c.kept %} · kept{% else %} · drop{% endif %}
+            {% if c.score is not none %} · {{ '%.2f'|format(c.score) }}{% endif %}
+            <br />{{ c.who or c.reason or '—' }}
+          </span>
+        </button>
+      </li>
+      {% else %}
+      <li class="muted">Кандидатов нет</li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
+
+<form method="post" action="/editorial/label-photos/{{ view.id }}" class="label-actions" id="label-form">
+  <input type="hidden" name="csrf" value="{{ csrf }}" />
+  <input type="hidden" name="chosen_idx" id="chosen_idx" value="" />
+  <label class="label-note">Свой поисковый запрос — только если у модели неверный
+    <input type="text" name="better_query" maxlength="200" placeholder="Сафонов ПСЖ футбол фото" value="{{ (view.labeled.better_query if view.labeled else '') }}" />
+  </label>
+  <label class="label-note">Заметка (необязательно)
+    <input type="text" name="note" maxlength="200" placeholder="не тот игрок / чужой клуб / коллаж" value="{{ (view.labeled.note if view.labeled else '') }}" />
+  </label>
+  <div class="label-btns">
+    <button type="submit" name="decision" value="accept" class="label-accept">Принять</button>
+    <button type="submit" name="decision" value="none" class="ghost">Ни одна не подходит</button>
+    {% if view.prev_id %}<a class="ghost small" href="/editorial/label-photos?id={{ view.prev_id }}">← Назад</a>{% endif %}
+    {% if view.next_id %}<a class="ghost small" href="/editorial/label-photos?id={{ view.next_id }}">Пропустить →</a>{% endif %}
+  </div>
+</form>
+<p class="muted">Enter — принять · N — ни одна</p>
+{% endif %}
+
+<script>
+(function () {
+  const form = document.getElementById("label-form");
+  if (!form) return;
+  const chosen = document.getElementById("chosen_idx");
+  const stage = document.getElementById("label-card-stage");
+  const frame = document.getElementById("label-preview");
+  const empty = document.getElementById("label-empty");
+
+  function fitPreview() {
+    if (!stage || !frame) return;
+    const w = Number(stage.dataset.w) || 1080;
+    const h = Number(stage.dataset.h) || 1080;
+    frame.style.width = w + "px";
+    frame.style.height = h + "px";
+    frame.style.transform = "scale(" + (stage.clientWidth / w) + ")";
+  }
+
+  function setPreviewPhoto(src) {
+    if (!frame) return;
+    const apply = function () {
+      const doc = frame.contentDocument;
+      const bg = doc && doc.querySelector(".bg");
+      if (!bg) return;
+      if (src) {
+        bg.style.background = '#1a1a1f url("' + src + '") center / cover no-repeat';
+      } else {
+        bg.style.background = "#1a1a1f";
+      }
+    };
+    if (frame.contentDocument && frame.contentDocument.readyState === "complete" && frame.contentDocument.querySelector(".bg")) {
+      apply();
+    } else {
+      frame.addEventListener("load", apply, { once: true });
+    }
+  }
+
+  if (stage && typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(fitPreview).observe(stage);
+  }
+  window.addEventListener("resize", fitPreview);
+  if (frame) frame.addEventListener("load", fitPreview);
+  fitPreview();
+
+  document.querySelectorAll(".label-cand").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const src = btn.getAttribute("data-src") || "";
+      const idx = btn.getAttribute("data-idx");
+      const pick = btn.getAttribute("data-pick") === "1";
+      if (!src) return;
+      setPreviewPhoto(src);
+      if (empty) empty.hidden = true;
+      chosen.value = pick ? "" : idx;
+      document.querySelectorAll(".label-cand").forEach(function (b) { b.classList.remove("is-active"); });
+      btn.classList.add("is-active");
+    });
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      form.querySelector('[value="accept"]').click();
+    }
+    if (e.key === "n" || e.key === "N") {
+      e.preventDefault();
+      form.querySelector('[value="none"]').click();
+    }
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    @font-face {
+      font-family: "Bebas Neue Pro";
+      src: url("{{ font_bebas }}") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F;
+    }
+    @font-face {
+      font-family: "Bebas Neue Pro";
+      src: url("{{ font_bebas_cyr }}") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+      unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+    }
+    @font-face {
+      font-family: "InterEd";
+      src: url("{{ font_inter }}") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: {{ width }}px;
+      height: {{ height }}px;
+      overflow: hidden;
+      background: #0b0b0d;
+    }
+    #card {
+      position: relative;
+      width: {{ width }}px;
+      height: {{ height }}px;
+      overflow: hidden;
+      background: #111;
+    }
+    .bg {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      background: #1a1a1f;
+      {% if photo_uri %}background: url("{{ photo_uri }}") center / cover no-repeat;{% endif %}
+    }
+    .plashka {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      {% if plashka_uri %}background: url("{{ plashka_uri }}") center / cover no-repeat;{% endif %}
+    }
+    .logo {
+      position: absolute;
+      top: 30px;
+      left: 30px;
+      z-index: 100;
+      width: 160px;
+      height: auto;
+      display: block;
+    }
+    .copy {
+      position: absolute;
+      left: 50%;
+      bottom: 72px;
+      transform: translateX(-50%);
+      width: 70%;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      text-align: center;
+    }
+    .comp {
+      font-family: "InterEd", sans-serif;
+      font-size: 24px;
+      font-weight: 400;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #B4B4B4;
+      line-height: 1.2;
+    }
+    .headline {
+      width: 100%;
+      font-family: "Bebas Neue Pro", sans-serif;
+      font-size: 81px;
+      font-weight: 400;
+      line-height: 0.92;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      text-align: center;
+      color: #fff;
+      white-space: normal;
+      word-break: normal;
+      overflow-wrap: break-word;
+    }
+    .score {
+      font-family: "Bebas Neue Pro", sans-serif;
+      font-size: 120px;
+      font-weight: 400;
+      line-height: 0.92;
+      letter-spacing: 0.04em;
+      color: {{ accent_color or "#E11D2A" }};
+    }
+    .handle {
+      font-family: "InterEd", sans-serif;
+      font-size: 24px;
+      font-weight: 400;
+      color: #B4B4B4;
+      letter-spacing: 10px;
+      white-space: nowrap;
+      line-height: 1;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="card">
+    <div class="bg"></div>
+    <div class="plashka"></div>
+    {% if cover_logo_uri or logo_uri %}
+    <img class="logo" src="{{ cover_logo_uri or logo_uri }}" alt="" />
+    {% endif %}
+    <div class="copy">
+      {% if competition %}
+      <div class="comp">{{ competition }}{% if stage %} · {{ stage }}{% endif %}</div>
+      {% endif %}
+      <div class="headline">{{ home }}</div>
+      <div class="score">{{ score_home }} — {{ score_away }}</div>
+      <div class="headline">{{ away }}</div>
+      <div class="handle">{{ cover_handle or "@channel_vnfutbol" }}</div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,78 @@
+# Editorial-канал: собственный футбольный контент.
+# Прод канала https://max.ru/channel_vnfutbol пока идёт автопостингом из t.me/jivifootbol.
+# dry_run: карточки не уходят в MAX, лента появляется в админке → Источники.
+
+slug: vnf_editorial
+chat_id: -75796650734896
+enabled: true
+dry_run: false
+moderate_before_publish: true
+
+feeds:
+  - name: championat_football
+    kind: rss
+    url: "https://www.championat.com/rss/news/football/"
+  - name: sportsru_football
+    kind: rss
+    url: "https://www.sports.ru/rss/rubric.xml?id=208"
+  - name: bbc_football
+    kind: rss
+    url: "https://feeds.bbci.co.uk/sport/football/rss.xml"
+  - name: guardian_football
+    kind: rss
+    url: "https://www.theguardian.com/football/rss"
+  - name: yt_bot_topics
+    kind: yt_bot
+    endpoint: "/var/max-repost/data/editorial/inbox/yt_bot_topics.json"
+  - name: soccerblog_memes
+    kind: telegram
+    handle: thesoccerblogteam
+    take_only: [video, meme_image]
+    rewrite_text: true
+    profanity_gate: strict
+
+competitions: [PL, PD, SA, CL, EL, RPL, BL, FL1, WC, EC, UNL, NT]
+event_types: [transfer, injury, match_result, official_statement, lineup, lifestyle]
+allow_rumors: false
+factcheck_min_sources: 2
+# Юридический флаг: внешние фото из поисковой выдачи. Без true пост уходит в held.
+image_rights_ack: true
+
+cadence:
+  min_gap_min: 40
+  max_gap_min: 55
+  priority_bypass: true
+  item_ttl_sec: 10800
+
+always_priority_teams:
+  - Russia
+
+template_map:
+  transfer: transfer
+  injury: breaking
+  match_result: default
+  official_statement: breaking
+  lineup: default
+  lifestyle: default
+
+brand:
+  name: "ВСЕ НА ФУТБОЛ"
+  logo: "templates/assets/logo_vnf.png"
+  accent_color: "#E11D2A"
+  cover_handle: "@channel_vnfutbol"
+
+# Зеркало в Telegram после одобрения (тот же контент, что в MAX)
+telegram_mirror:
+  enabled: true
+  channel: "@vnfutbol"
+  preview_handle: "@vnfutbol"
+
+matchday:
+  enabled: true
+  group_order: [CL, EL, NT, PL, PD, SA, BL, FL1, RPL]
+  include: { grands: true, all_cl_el: true, national_top100: true, national_always: [Russia] }
+results:
+  enabled: true
+  significant_only: true
+
+poll_interval_sec: 60

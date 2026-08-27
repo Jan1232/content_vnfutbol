@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Каналы — MAX Repost{% endblock %}
+{% block body %}
+<div class="shell-bar">
+  <div class="shell-brand">
+    <div class="shell-logo" aria-hidden="true"></div>
+    <div class="shell-brand-text">
+      <div class="shell-brand-name">MAX Repost</div>
+      <div class="shell-brand-sub">Панель управления публикациями</div>
+    </div>
+  </div>
+  <div class="shell-actions">
+    <a class="ghost small" href="/editorial">Editorial</a>
+    <a class="ghost small" href="/seo">SEO</a>
+    <form method="post" action="/sync">
+      <input type="hidden" name="csrf" value="{{ csrf }}" />
+      <button type="submit" class="ghost small">Обновить список</button>
+    </form>
+    <form method="post" action="/logout">
+      <button type="submit" class="ghost small">Выйти</button>
+    </form>
+  </div>
+</div>
+
+<header class="top">
+  <div class="top-copy">
+    <p class="page-kicker">Каналы</p>
+    <h1>Куда публикуем</h1>
+    <p class="muted">Вотермарка, ссылка в конце поста и источники для каждого канала MAX</p>
+  </div>
+</header>
+
+{% if channels %}
+<div class="stats-strip">
+  <div class="stat-chip"><strong>{{ channels|length }}</strong> каналов</div>
+  <div class="stat-chip"><strong>{{ channels|sum(attribute='sources_count') }}</strong> источников</div>
+</div>
+{% endif %}
+
+{% if not channels %}
+  <p class="empty">Пока нет каналов. Добавьте бота в канал как администратора и нажмите «Обновить список».</p>
+{% else %}
+<ul class="channel-list">
+  {% for ch in channels %}
+  <li class="channel channel-card">
+    <img class="avatar" src="{{ ch.icon_url or '/static/placeholder.svg' }}" alt="" width="64" height="64" />
+    <div class="meta">
+      <div class="title">{{ ch.title or ('#' ~ ch.chat_id) }}</div>
+      <div class="sub">
+        <span>{{ ch.type }}</span>
+        <span>·</span>
+        <span>{{ ch.participants_count }} подп.</span>
+        {% if ch.link %}<span>·</span><a href="{{ ch.link }}" target="_blank" rel="noopener">открыть</a>{% endif %}
+        {% if ch.sources_count %}<span>·</span><span>{{ ch.sources_count }} ист.</span>{% endif %}
+      </div>
+      <div class="channel-settings">
+        <form method="post" action="/channels/{{ ch.chat_id }}/watermark" class="wm-form">
+          <input type="hidden" name="csrf" value="{{ csrf }}" />
+          <label class="wm-label">Вотермарка на фото
+            <input name="watermark_text" value="{{ ch.watermark_text or '' }}" placeholder="@channel / текст" maxlength="80" />
+          </label>
+          <button type="submit" class="ghost small">Сохранить</button>
+        </form>
+        <form method="post" action="/channels/{{ ch.chat_id }}/footer-link" class="wm-form">
+          <input type="hidden" name="csrf" value="{{ csrf }}" />
+          <label class="wm-label">Текст footer
+            <input name="footer_link_text" value="{{ ch.footer_link_text or '' }}" placeholder="Подписаться | Канал" maxlength="120" />
+          </label>
+          <label class="wm-label">Ссылка footer
+            <input name="footer_link" value="{{ ch.footer_link or '' }}" placeholder="https://max.ru/…" maxlength="500" />
+          </label>
+          <label class="wm-label check-label">
+            <input type="checkbox" name="footer_as_button" value="1" {% if ch.footer_as_button %}checked{% endif %} />
+            Показывать как кнопку
+          </label>
+          <button type="submit" class="ghost small">Сохранить</button>
+        </form>
+        {% if ch.watermark_text %}<div class="detail">на фото: {{ ch.watermark_text }}</div>{% endif %}
+        {% if ch.footer_link %}<div class="detail">{% if ch.footer_as_button %}кнопка{% else %}ссылка{% endif %}: {% if ch.footer_link_text %}«{{ ch.footer_link_text }}» → {% endif %}{{ ch.footer_link }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="channel-actions">
+      <a class="btn" href="/channels/{{ ch.chat_id }}/sources">Источники{% if ch.sources_count %} · {{ ch.sources_count }}{% endif %}</a>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

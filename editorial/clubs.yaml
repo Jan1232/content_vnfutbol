@@ -1,0 +1,33 @@
+# "grand" = приоритетный клуб для внеочередной публикации счёта
+leagues:
+  APL:            # Англия
+    - Manchester City
+    - Arsenal
+    - Liverpool
+    - Manchester United
+    - Chelsea
+  LaLiga:         # Испания
+    - Real Madrid
+    - Barcelona
+    - Atletico Madrid
+  SerieA:         # Италия
+    - Inter
+    - Juventus
+    - AC Milan
+    - Napoli
+  Bundesliga:     # Германия
+    - Bayern Munich
+    - Borussia Dortmund
+    - Bayer Leverkusen
+    - RB Leipzig
+  Ligue1:         # Франция
+    - Paris Saint-Germain
+    - Marseille
+    - Monaco
+    - Lyon
+  RPL:            # Россия
+    - Zenit
+    - Krasnodar
+    - Spartak Moscow
+    - CSKA Moscow
+    - Dynamo Moscow

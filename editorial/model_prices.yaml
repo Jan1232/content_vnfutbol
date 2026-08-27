@@ -1,0 +1,14 @@
+# Грубая оценка $ для админки. Источник — публичный прайс OpenAI, не биллинг-инвойс.
+models:
+  gpt-5.6-luna:
+    input_per_m: 0.20
+    output_per_m: 1.20
+  gpt-5-mini:
+    input_per_m: 0.125
+    output_per_m: 1.00
+  gpt-5-search-api:
+    input_per_m: 0.20
+    output_per_m: 1.20
+  gpt-image-1-mini:
+    input_per_m: 0.0
+    output_per_m: 0.0

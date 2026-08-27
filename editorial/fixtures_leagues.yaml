@@ -1,0 +1,36 @@
+# Маппинг турниров: наш код → football-data.org / ESPN scoreboard.
+# Free football-data: CL, EL, PL, PD, BL1, SA, FL1, WC, EC (нет РПЛ/UNL).
+
+football_data:
+  PL: PL
+  PD: PD
+  SA: SA
+  BL: BL1
+  FL1: FL1
+  CL: CL
+  EL: EL
+  WC: WC
+  EC: EC
+
+# ESPN site.api — без ключа, для дыр free-тарифа.
+espn:
+  RPL: [rus.1]
+  UNL: [uefa.nations]
+  NT: [fifa.friendly]
+  # WC/EC квалификация, если football-data пуст в этот день
+  WC: [fifa.world, fifa.worldq]
+  EC: [uefa.euro, uefa.euroq]
+
+labels_ru:
+  CL: Лига чемпионов
+  EL: Лига Европы
+  NT: Сборные
+  PL: АПЛ
+  PD: Ла Лига
+  SA: Серия А
+  BL: Бундеслига
+  FL1: Лига 1
+  RPL: РПЛ
+  WC: ЧМ
+  EC: Евро
+  UNL: Лига наций

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Editorial — MAX Repost{% endblock %}
+{% block body %}
+<div class="shell-bar">
+  <div class="shell-brand">
+    <div class="shell-logo" aria-hidden="true"></div>
+    <div class="shell-brand-text">
+      <div class="shell-brand-name">MAX Repost</div>
+      <div class="shell-brand-sub">Editorial pipeline</div>
+    </div>
+  </div>
+  <div class="shell-actions">
+    <a class="ghost small" href="/">← Каналы</a>
+    <a class="ghost small" href="/editorial/queue">Модерация</a>
+    <a class="ghost small" href="/editorial/label-day">Разметка дня</a>
+    <a class="ghost small" href="/editorial/label-photos">Разметка фото</a>
+    <a class="ghost small" href="/seo">SEO</a>
+    <form method="post" action="/logout">
+      <button type="submit" class="ghost small">Выйти</button>
+    </form>
+  </div>
+</div>
+
+<header class="top">
+  <div class="top-copy">
+    <p class="page-kicker">Editorial</p>
+    <h1>Свой футбольный контент</h1>
+    <p class="muted">Поиск → только футбол → фактчек (gpt-5-search-api) → редактура → PNG → симуляция в ленте источника (в MAX пока не уходит)</p>
+  </div>
+</header>
+
+{% if message %}
+<p class="muted">{{ message }}</p>
+{% endif %}
+
+{% if usage %}
+<div class="channel-card" style="padding:16px;margin-bottom:20px">
+  <div class="title">Расход LLM за 24ч (Platform API)</div>
+  <div class="sub">вызовов {{ usage.n }} · prompt {{ usage.prompt_tokens }} · completion {{ usage.completion_tokens }} · ≈ ${{ '%.4f'|format(usage.usd) }}</div>
+  {% if usage.rows %}
+  <div class="detail" style="margin-top:8px">
+    {% for row in usage.rows %}
+      <span class="stat-chip">{{ row.task }} {{ row.model }} · {{ row.n }} · in {{ row.prompt_tokens }} · ≈ ${{ '%.4f'|format(row.usd) }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if not channels %}
+  <p class="empty">Нет YAML в editorial/channels. Добавьте конфиг канала.</p>
+{% else %}
+<ul class="channel-list">
+  {% for c in channels %}
+  <li class="channel channel-card">
+    <div class="meta">
+      <div class="title">{{ c.brand.name or c.slug }}</div>
+      <div class="sub">{{ c.slug }} · chat {{ c.chat_id }} · {{ 'вкл' if c.runtime_enabled else 'выкл' }}{% if c.dry_run %} · симуляция{% endif %}</div>
+      <div class="detail">слот: {{ c.next_slot_at or '—' }} · последняя публикация: {{ c.last_published_at or '—' }}</div>
+      <div class="detail">
+        {% for st, n in c.counts.items() %}
+          <span class="stat-chip">{{ st }} {{ n }}</span>
+        {% endfor %}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <form method="post" action="/editorial/toggle/{{ c.slug }}">
+          <input type="hidden" name="csrf" value="{{ csrf }}" />
+          <input type="hidden" name="enabled" value="{{ '0' if c.runtime_enabled else '1' }}" />
+          <button type="submit" class="ghost small">{{ 'Выключить' if c.runtime_enabled else 'Включить' }}</button>
+        </form>
+        <form method="post" action="/editorial/force/{{ c.slug }}">
+          <input type="hidden" name="csrf" value="{{ csrf }}" />
+          <button type="submit" class="ghost small">Force tick</button>
+        </form>
+        <form method="post" action="/editorial/matchday/{{ c.slug }}">
+          <input type="hidden" name="csrf" value="{{ csrf }}" />
+          <button type="submit" class="ghost small">Force матчи дня</button>
+        </form>
+        <form method="post" action="/editorial/results/{{ c.slug }}">
+          <input type="hidden" name="csrf" value="{{ csrf }}" />
+          <button type="submit" class="ghost small">Force результаты</button>
+        </form>
+        <a class="ghost small" href="/channels/{{ c.chat_id }}/sources#editorial-feed">Лента симуляции</a>
+      </div>
+      <div class="detail" style="margin-top:10px">сетка: {{ c.matchday_last_date or '—' }}</div>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+
+{% for c in channels %}
+  <h2 style="margin:28px 0 8px;font-family:var(--font-display);font-size:1.35rem">Матчи дня сегодня · {{ c.brand.name or c.slug }}</h2>
+  {% if c.fixtures_today %}
+  <ul class="channel-list">
+    {% for m in c.fixtures_today %}
+    <li class="channel channel-card" style="padding:12px 16px">
+      <div class="title">{{ m.home }} — {{ m.away }}</div>
+      <div class="sub">{{ m.competition }} · {{ m.kickoff_utc }} · {{ m.status }}{% if m.score_home is not none %} · {{ m.score_home }}:{{ m.score_away }}{% endif %}{% if m.significant %} · значимый{% else %} · вне сетки{% endif %}</div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">На сегодня в кэше фикстур пока пусто — сетка соберётся в 09:00 МСК или по Force.</p>
+  {% endif %}
+
+  <h2 style="margin:28px 0 8px;font-family:var(--font-display);font-size:1.35rem">Результаты (последние) · {{ c.brand.name or c.slug }}</h2>
+  {% if c.recent_results %}
+  <ul class="channel-list">
+    {% for r in c.recent_results %}
+    <li class="channel channel-card" style="padding:12px 16px">
+      <div class="title">{{ r.home or r.provider_id }}{% if r.score_home is not none %} {{ r.score_home }}:{{ r.score_away }}{% endif %} {{ r.away or '' }}</div>
+      <div class="sub">{{ r.competition or '' }} · {{ r.posted_at }} · {{ r.mid or '' }}</div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">Опубликованных результатов пока нет. Free football-data отдаёт счёт с задержкой в несколько минут.</p>
+  {% endif %}
+{% endfor %}
+
+{% for c in channels %}
+  <h2 style="margin:28px 0 8px;font-family:var(--font-display);font-size:1.35rem">Карточки · {{ c.brand.name or c.slug }}</h2>
+  {% if c.covers %}
+  <ul class="cover-grid">
+    {% for p in c.covers %}
+    <li class="cover-card">
+      <a href="/editorial/preview/{{ p.id }}">
+        <img src="/editorial/cover/{{ p.id }}" alt="" />
+      </a>
+      <div class="meta">
+        <div class="title">{{ p.caption or p.headline or p.title or ('#' ~ p.id) }}</div>
+        <div class="sub">{{ p.status }}{% if p.event_type %} · {{ p.event_type }}{% endif %}</div>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">PNG пока нет — карточка появится после рендера (фактчек → редактура → обложка).</p>
+  {% endif %}
+{% endfor %}
+{% endif %}
+{% endblock %}

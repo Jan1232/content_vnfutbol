@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Сводка дня {{ day }} — MAX Repost{% endblock %}
+{% block body %}
+<div class="shell-bar">
+  <div class="shell-brand">
+    <div class="shell-logo" aria-hidden="true"></div>
+    <div class="shell-brand-text">
+      <div class="shell-brand-name">MAX Repost</div>
+      <div class="shell-brand-sub">Сводка симуляции</div>
+    </div>
+  </div>
+  <div class="shell-actions">
+    <a class="ghost small" href="/editorial/label-day/{{ day }}">← Разметка</a>
+    <a class="ghost small" href="/editorial">Editorial</a>
+  </div>
+</div>
+
+<header class="top">
+  <div class="top-copy">
+    <p class="page-kicker">{{ day }}</p>
+    <h1>Разметка готовых постов</h1>
+    <p class="muted">всего {{ summary.n }} · принято {{ summary.accept }} ({{ summary.accept_pct }}%) · отклонено {{ summary.reject }} · не в пул {{ summary.should_not_pool }}</p>
+  </div>
+</header>
+
+<div class="channel-card" style="padding:16px;margin-bottom:16px">
+  <div class="title">Файлы</div>
+  <div class="sub">пул: {{ summary.files.pool }}</div>
+  <div class="sub">разметка: {{ summary.files.labels }}</div>
+</div>
+
+{% if summary.comments %}
+<div class="channel-card" style="padding:16px;margin-bottom:16px">
+  <div class="title">Комментарии</div>
+  {% for c in summary.comments %}
+  <div class="detail" style="margin-top:6px"><a href="/editorial/label-day/{{ day }}?id={{ c.id }}">{{ c.id }}</a> · {{ c.decision }} — {{ c.comment }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if summary.n %}
+<ul class="channel-list">
+  {% for row in summary.rows %}
+  <li class="channel channel-card" style="padding:12px 16px">
+    <div class="title"><a href="/editorial/label-day/{{ day }}?id={{ row.id }}">{{ row.id }}</a> · {{ row.decision }}</div>
+    <div class="sub">{{ row.title }}</div>
+    <div class="detail">{{ row.event_type }}{% if row.slot %} · {{ row.slot }}{% endif %}{% if row.comment %} · {{ row.comment }}{% endif %}</div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">Пока нет решений. Пройдите карточки.</p>
+{% endif %}
+{% endblock %}

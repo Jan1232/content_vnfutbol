@@ -1,0 +1,10 @@
+# Оверрайд: Игры — https://max.ru/channel_game_hub
+# Ссылки на магазины/демо в тексте: обрезаем URL, название игры оставляем (ядро strip).
+# Подпись источника «🎮 Игры ПК» вырезается в filter.SOURCE_SIGNATURE_*.
+
+chat_id: -77431398906586
+title: Игры
+link_contains: channel_game_hub
+
+moderation_mode: strip
+require_media: true

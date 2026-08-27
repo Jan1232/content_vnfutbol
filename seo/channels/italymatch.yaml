@@ -1,0 +1,27 @@
+# SEO-маяк: Serie A (Италия).
+# https://max.ru/channel_italymatch
+
+slug: italymatch
+chat_id: -77925093456602
+link: https://max.ru/channel_italymatch
+
+# SA = Serie A (football-data free + ESPN ita.1)
+competitions: [SA]
+providers: [auto]
+
+horizon_days: 21
+post_match_grace_min: 120
+
+pick_mode: hype
+hype_window_days: 4
+
+competition_label: "Серия А"
+competition_label_qual: "Серия А"
+
+idle_title: "серия а матч смотреть онлайн прямая трансляция бесплатно"
+title_suffix: "матч смотреть онлайн прямая трансляция бесплатно"
+
+target_community: https://max.ru/channel_vnfutbol
+pin_post: true
+notify_title_change: false
+enabled: true
