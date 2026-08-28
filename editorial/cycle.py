@@ -632,6 +632,7 @@ def publish_ready(client: MaxClient, channel: EditorialChannelConfig) -> list[di
         moderation_enabled,
         try_dispatch_memes,
         try_dispatch_review,
+        try_soccerblog_auto_publish,
     )
     from editorial.store import status_counts, top_stuck_errors
 
@@ -658,7 +659,9 @@ def publish_ready(client: MaxClient, channel: EditorialChannelConfig) -> list[di
     results.append({"action": "status_snapshot", "counts": counts, "stuck_errors": stuck})
 
     auto_types = {str(x) for x in (channel.moderation.auto_publish_types or ()) if str(x)}
-    if auto_types and moderation_enabled(channel):
+    from editorial.live_test import is_live_test
+
+    if auto_types and moderation_enabled(channel) and not is_live_test():
         for item in list_ready(channel.slug):
             et = str(item.get("event_type") or "")
             if et not in auto_types or is_out_of_band_item(item):
@@ -679,6 +682,10 @@ def publish_ready(client: MaxClient, channel: EditorialChannelConfig) -> list[di
                 )
 
     if moderation_enabled(channel):
+        try:
+            results.extend(try_soccerblog_auto_publish(client, channel))
+        except Exception as e:
+            results.append({"action": "soccerblog_auto_error", "error": str(e)[:200]})
         try:
             results.extend(try_dispatch_memes(channel))
         except Exception as e:
@@ -787,6 +794,9 @@ def process_channel(channel: EditorialChannelConfig, client: MaxClient | None) -
 
 def run_editorial_tick(*, force_slug: str | None = None) -> list[dict[str, Any]]:
     init_db()
+    from editorial.usage import maybe_purge_llm_call_logs
+
+    maybe_purge_llm_call_logs()
     reload_editorial_channels()
     try:
         ranking = refresh_top100()

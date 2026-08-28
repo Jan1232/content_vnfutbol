@@ -102,6 +102,9 @@ def can_dispatch_review(
     pool = _ready_pool(channel)
     # обычная очередь — без fixture_result и мемов
     pool = [i for i in pool if not is_out_of_band_item(i)]
+    from editorial.soccerblog_gate import should_auto_publish
+
+    pool = [i for i in pool if not should_auto_publish(i)]
     if not pool:
         return False
     if force:
@@ -176,6 +179,9 @@ def try_dispatch_review(
         return None
     pool = _ready_pool(channel)
     pool = [i for i in pool if not is_out_of_band_item(i)]
+    from editorial.soccerblog_gate import should_auto_publish
+
+    pool = [i for i in pool if not should_auto_publish(i)]
     if not pool:
         return None
     picked = pick_best(pool) or pool[0]
@@ -201,10 +207,14 @@ def try_dispatch_memes(
     """Готовые мемы/видео → в TG сразу, вне cadence и без блокировки обычной очереди."""
     if not moderation_enabled(channel):
         return []
+    from editorial.soccerblog_gate import should_auto_publish
+
     pool = [
         i
         for i in _ready_pool(channel)
-        if is_out_of_band_item(i) and (i.get("event_type") or "") != "fixture_result"
+        if is_out_of_band_item(i)
+        and (i.get("event_type") or "") != "fixture_result"
+        and not should_auto_publish(i)
     ]
     # старые сверху — не копить «хвост»
     pool = list(reversed(pool))[: max(1, int(limit or 10))]
@@ -226,7 +236,80 @@ def try_dispatch_memes(
     return out
 
 
+def _log_soccerblog_gate_feedback(row: dict[str, Any], human_action: str) -> None:
+    from editorial.soccerblog_gate import gate_verdict_of_row
+
+    verdict = gate_verdict_of_row(row)
+    if not verdict:
+        return
+    log_moderation(
+        {
+            "action": "soccerblog_gate_feedback",
+            "human": human_action,
+            "gate_kind": verdict.get("kind"),
+            "gate_confidence": verdict.get("confidence"),
+            "gate_reason": verdict.get("reason"),
+            "agreed": human_action in {"approved", "auto_published"},
+            "item": item_snapshot(row),
+        }
+    )
+
+
+def try_soccerblog_auto_publish(
+    client: MaxClient,
+    channel: EditorialChannelConfig,
+) -> list[dict[str, Any]]:
+    """Фаза 2: уверенные soccerblog_gate → публикация без ручной модерации."""
+    from editorial.live_test import is_live_test
+    from editorial.publisher import publish
+    from editorial.soccerblog_gate import gate_verdict_of_row, should_auto_publish
+
+    if is_live_test():
+        return []
+    if not moderation_enabled(channel):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in list_ready(channel.slug):
+        if not gate_verdict_of_row(item) or not should_auto_publish(item):
+            continue
+        news_id = int(item.get("id") or 0)
+        if not news_id:
+            continue
+        try:
+            res = publish(client, channel, item, force_live=True)
+            action = str(res.get("action") or "")
+            if action in {"published", "simulated"}:
+                if is_priority(item, channel):
+                    mark_priority_published(channel)
+                else:
+                    mark_normal_published(channel)
+                _log_soccerblog_gate_feedback(item, "auto_published")
+                log_moderation(
+                    {
+                        "action": "soccerblog_auto_publish",
+                        "gate": gate_verdict_of_row(item),
+                        "item": item_snapshot(item),
+                        "publish": res,
+                    }
+                )
+            out.append({"action": "soccerblog_auto_publish", "news_id": news_id, **res})
+        except Exception as e:
+            update_news(news_id, last_error=str(e)[:800])
+            out.append(
+                {
+                    "action": "soccerblog_auto_publish_error",
+                    "news_id": news_id,
+                    "error": str(e)[:200],
+                }
+            )
+    return out
+
+
 def publish_approved(news_id: int) -> dict[str, Any]:
+    from editorial.live_test import is_live_test
+
+    if is_live_test():
+        return {"ok": False, "msg": "тест — публикация в MAX отключена"}
     row = get_news(int(news_id))
     if not row:
         return {"ok": False, "msg": "missing"}
@@ -278,6 +361,7 @@ def publish_approved(news_id: int) -> dict[str, Any]:
                 "publish": res,
             }
         )
+        _log_soccerblog_gate_feedback(row, "approved")
         try_dispatch_review(cfg)
         try:
             try_dispatch_memes(cfg)
@@ -305,6 +389,7 @@ def reject_post(news_id: int, *, reason: str = "manual reject") -> None:
                 "item": item_snapshot(row),
             }
         )
+        _log_soccerblog_gate_feedback(row, "rejected")
         cfg = get_channel(str(row.get("channel_slug") or ""))
         if cfg:
             try:
@@ -362,6 +447,10 @@ def expire_stale_moderation_reviews(
     channel: EditorialChannelConfig,
 ) -> list[dict[str, Any]]:
     """Автоотклонение awaiting_review старше N минут дневного времени (не ночью Екб)."""
+    from editorial.live_test import is_live_test
+
+    if is_live_test():
+        return []
     if not moderation_enabled(channel):
         return []
     settings = get_settings()

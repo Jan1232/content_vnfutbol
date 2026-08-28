@@ -21,6 +21,8 @@ def chat(
     _ = user
     if model_kind == "reasoning":
         primary, fallback = _reasoning_models()
+    elif model_kind == "classify":
+        primary, fallback = _classify_models()
     else:
         primary, fallback = _text_models()
     try:
@@ -68,6 +70,13 @@ def _text_models() -> tuple[str, str]:
     settings = get_settings()
     primary = (settings.editorial_text_model or "gpt-5.6-luna").strip()
     fallback = (settings.editorial_text_fallback or "gpt-5-mini").strip()
+    return primary, fallback
+
+
+def _classify_models() -> tuple[str, str]:
+    settings = get_settings()
+    primary = (settings.editorial_classify_model or "gpt-5.6-luna").strip()
+    fallback = (settings.editorial_classify_fallback or "gpt-5.6-luna").strip()
     return primary, fallback
 
 
@@ -133,7 +142,8 @@ def pick_news(
             'Верни JSON: {"take": false, "tag": "reject", "reason": "..."}'
         ),
         tag="ed-pick",
-        max_tokens=400,
+        model_kind="classify",
+        max_tokens=1200,
     )
     return data
 
@@ -192,16 +202,21 @@ def topic_check(title: str, body: str, entities: dict[str, Any]) -> dict[str, An
             'Верни JSON: {"is_football": true, "subtype": "match|transfer|injury|club|player|org|other", "reason": "..."}'
         ),
         tag="ed-topic",
+        model_kind="classify",
+        max_tokens=1200,
     )
+
+
+_FACTCHECK_SYSTEM = (
+    "Ты фактчекер футбольных новостей. Запрещено додумывать факты, которых нет в сниппетах. "
+    "Если источники противоречат — укажи contradiction. "
+    "Сенсационные диагнозы/болезни игрока без нескольких независимых источников — фейк."
+)
 
 
 def factcheck(item: dict[str, Any], snippets: list[dict[str, Any]]) -> dict[str, Any]:
     return chat_json(
-        (
-            "Ты фактчекер футбольных новостей. Запрещено додумывать факты, которых нет в сниппетах. "
-            "Если источники противоречат — укажи contradiction. "
-            "Сенсационные диагнозы/болезни игрока без нескольких независимых источников — фейк."
-        ),
+        _FACTCHECK_SYSTEM,
         (
             f"Новость: {json.dumps({k: item.get(k) for k in ('title','body','event_type','url','source')}, ensure_ascii=False)}\n"
             f"Сниппеты независимых источников:\n{json.dumps(snippets[:12], ensure_ascii=False)}\n"
@@ -269,22 +284,52 @@ def story_relation(
     body: str,
     prior_summaries: list[str],
 ) -> dict[str, Any]:
-    """Повтор vs развитие сюжета. Модель: EDITORIAL_REASONING_MODEL (terra)."""
+    """Повтор vs развитие сюжета. Гибрид: Luna-first, Terra при низкой уверенности."""
     listed = "\n".join(f"- {s}" for s in (prior_summaries or [])[:6] if str(s).strip())
     if not listed:
         listed = "- (нет summary)"
+    user = (
+        f"Уже опубликовано по сюжету:\n{listed}\n\n"
+        f"Новый пост:\nЗаголовок: {title}\n"
+        f"Текст: {(body or '')[:1800]}\n"
+    )
+    settings = get_settings()
+    hybrid = bool(getattr(settings, "story_relation_hybrid", True))
+    escalate = float(getattr(settings, "reasoning_escalate", 0.7) or 0.7)
+
+    if hybrid:
+        luna = chat_json(
+            _STORY_RELATION_SYSTEM,
+            user,
+            tag="story_relation_luna",
+            max_tokens=500,
+            temperature=0.1,
+            model_kind="text",
+        )
+        try:
+            conf = float(luna.get("confidence") or 0)
+        except (TypeError, ValueError):
+            conf = 0.0
+        rel = str(luna.get("relation") or "").strip().lower()
+        if rel in {"duplicate", "development", "unrelated"} and conf >= escalate:
+            luna["_model_tier"] = "luna"
+            return _normalize_story_relation(luna)
+
     data = chat_json(
         _STORY_RELATION_SYSTEM,
-        (
-            f"Уже опубликовано по сюжету:\n{listed}\n\n"
-            f"Новый пост:\nЗаголовок: {title}\n"
-            f"Текст: {(body or '')[:1800]}\n"
-        ),
+        user,
         tag="story_relation",
         max_tokens=500,
         temperature=0.1,
         model_kind="reasoning",
     )
+    if hybrid:
+        data["_model_tier"] = "terra"
+        data["_escalated_from"] = "luna"
+    return _normalize_story_relation(data)
+
+
+def _normalize_story_relation(data: dict[str, Any]) -> dict[str, Any]:
     rel = str(data.get("relation") or "").strip().lower()
     if rel not in {"duplicate", "development", "unrelated"}:
         data["relation"] = "duplicate"
@@ -324,7 +369,7 @@ def image_search_query(title: str, *, year: str = "", event_type: str = "") -> s
         'Верни JSON: {"query":"..."}'
     )
     settings = get_settings()
-    model = (settings.editorial_vision_model or "gpt-4o-mini").strip()
+    model = (settings.editorial_vision_model or "gpt-5.6-luna").strip()
     with usage_scope(task="ed-image-query"):
         raw = get_client().chat(
             model,

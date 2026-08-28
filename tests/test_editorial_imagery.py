@@ -222,6 +222,10 @@ class ImageUrlSafetyTests(unittest.TestCase):
 class _ImgSettings:
     editorial_image_gen_fallback = False
     editorial_vision_model = "gpt-4o-mini"
+    editorial_text_model = "gpt-5.6-luna"
+    vision_ab = False
+    vision_skip_for_og = True
+    vision_single_candidate = True
     imagery_candidates_max = 8
     imagery_min_relevance = 0.55
     imagery_max_upscale = 1.75
@@ -370,7 +374,7 @@ class QualityCropRelevanceTests(unittest.TestCase):
         from editorial.imagery import ImageCandidate, score_relevance
 
         path = self._checker(1600, 1600, "ger.jpg")
-        cand = ImageCandidate(path=path, url="https://example.com/germany-team.jpg", via="article", width=1600, height=1600)
+        cand = ImageCandidate(path=path, url="https://example.com/germany-team.jpg", via="yandex", width=1600, height=1600)
         item = {
             "title": "Селтик разгромил ЛАСК",
             "event_type": "match_result",

@@ -50,6 +50,14 @@ def format_caption(item: dict[str, Any], channel: EditorialChannelConfig) -> str
     pick_line = " · ".join(pick_bits) if pick_bits else "—"
     headline = (item.get("caption_line1") or item.get("headline") or "").strip()
     meme = is_meme_row(item)
+    from editorial.soccerblog_gate import gate_verdict_of_row
+
+    gate = gate_verdict_of_row(item)
+    if gate:
+        lines.append(
+            f"<b>LLM gate:</b> {_esc(str(gate.get('kind') or '—'))} "
+            f"conf={gate.get('confidence', '—')} — {_esc(str(gate.get('reason') or '')[:200])}"
+        )
 
     et = str(item.get("event_type") or "—")
     if et == "fixture_result":

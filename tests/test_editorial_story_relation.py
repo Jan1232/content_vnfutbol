@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 
 class ReasoningModelTests(unittest.TestCase):
-    def test_story_relation_uses_reasoning_model(self):
+    def test_story_relation_hybrid_luna_first(self):
         from editorial import llm as llm_mod
 
         captured: list[str] = []
@@ -27,6 +27,8 @@ class ReasoningModelTests(unittest.TestCase):
                     editorial_text_model="gpt-5.6-luna",
                     editorial_text_fallback="gpt-5-mini",
                     editorial_allow_groq_fallback=False,
+                    story_relation_hybrid=True,
+                    reasoning_escalate=0.7,
                 ),
             ),
         ):
@@ -35,10 +37,43 @@ class ReasoningModelTests(unittest.TestCase):
             gc.return_value = client
             out = llm_mod.story_relation("Драка", "текст", ["уже была драка"])
         self.assertEqual(out["relation"], "duplicate")
-        self.assertEqual(captured[0], "gpt-5.6-terra")
-        # fallback chain is inside client — primary passed first
-        self.assertEqual(client.chat.call_args.kwargs.get("fallback"), "gpt-5.6-luna")
-        self.assertEqual(client.chat.call_args.kwargs.get("task"), "story_relation")
+        self.assertEqual(captured[0], "gpt-5.6-luna")
+        self.assertEqual(client.chat.call_args.kwargs.get("task"), "story_relation_luna")
+        self.assertEqual(len(captured), 1)
+
+    def test_story_relation_escalates_to_terra(self):
+        from editorial import llm as llm_mod
+
+        captured: list[str] = []
+
+        def _chat(model, messages, **kwargs):
+            captured.append(model)
+            if len(captured) == 1:
+                return '{"relation":"development","confidence":0.4,"reason":"unclear"}'
+            return '{"relation":"development","confidence":0.9,"reason":"new fact"}'
+
+        with (
+            patch.object(llm_mod, "get_client") as gc,
+            patch.object(
+                llm_mod,
+                "get_settings",
+                return_value=MagicMock(
+                    editorial_reasoning_model="gpt-5.6-terra",
+                    editorial_reasoning_fallback="gpt-5.6-luna",
+                    editorial_text_model="gpt-5.6-luna",
+                    editorial_text_fallback="gpt-5-mini",
+                    editorial_allow_groq_fallback=False,
+                    story_relation_hybrid=True,
+                    reasoning_escalate=0.7,
+                ),
+            ),
+        ):
+            client = MagicMock()
+            client.chat.side_effect = _chat
+            gc.return_value = client
+            out = llm_mod.story_relation("Драка", "текст", ["уже была драка"])
+        self.assertEqual(out["relation"], "development")
+        self.assertEqual(captured, ["gpt-5.6-luna", "gpt-5.6-terra"])
 
     def test_rewrite_system_prefix_stable_no_post_vars(self):
         from editorial import llm as llm_mod

@@ -372,7 +372,7 @@ def editorial_page(request: Request):
         status_counts,
         top_stuck_errors,
     )
-    from editorial.usage import daily_usage_summary
+    from editorial.usage import usage_dashboard
 
     reload_editorial_channels()
     configs = load_editorial_channels(include_disabled=True)
@@ -423,7 +423,7 @@ def editorial_page(request: Request):
         "editorial.html",
         {
             "channels": channels,
-            "usage": daily_usage_summary(),
+            "usage": usage_dashboard(),
             "csrf": request.session.get("csrf"),
             "message": request.query_params.get("msg") or "",
         },

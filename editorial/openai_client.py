@@ -19,17 +19,33 @@ from editorial.jsonutil import parse_json_object
 
 _usage_news_id: ContextVar[str | None] = ContextVar("ed_usage_news_id", default=None)
 _usage_task: ContextVar[str] = ContextVar("ed_usage_task", default="")
+_benchmark_run_id: ContextVar[str] = ContextVar("ed_benchmark_run_id", default="")
 
 
 @contextmanager
-def usage_scope(*, news_id: Any = None, task: str | None = None) -> Iterator[None]:
+def usage_scope(
+    *,
+    news_id: Any = None,
+    task: str | None = None,
+    benchmark_run_id: str | None = None,
+) -> Iterator[None]:
     t_news = _usage_news_id.set(str(news_id) if news_id is not None else _usage_news_id.get())
     t_task = _usage_task.set(task if task is not None else _usage_task.get())
+    t_bench = _benchmark_run_id.set(
+        benchmark_run_id if benchmark_run_id is not None else _benchmark_run_id.get()
+    )
     try:
         yield
     finally:
         _usage_news_id.reset(t_news)
         _usage_task.reset(t_task)
+        _benchmark_run_id.reset(t_bench)
+
+
+@contextmanager
+def benchmark_scope(run_id: str) -> Iterator[None]:
+    with usage_scope(benchmark_run_id=str(run_id or "")):
+        yield
 
 
 def assert_platform_transport(base_url: str) -> None:
@@ -92,20 +108,75 @@ def _record_usage(
     note: str = "",
     news_id: str | None = None,
     cached_tokens: int = 0,
+    benchmark_run_id: str | None = None,
+    ms: int = 0,
+    http_status: int = 0,
+    request_payload: dict[str, Any] | None = None,
+    messages: list[dict[str, Any]] | None = None,
+    response_text: str = "",
+    images_n: int = 0,
+    image_bytes: int = 0,
 ) -> None:
     try:
-        from editorial.usage import record_llm_usage
+        from editorial.live_test import is_live_test, live_test_date
+        from editorial.usage import (
+            _payload_for_log,
+            estimate_usd,
+            record_benchmark_stage,
+            record_llm_call_log,
+            record_llm_usage,
+        )
 
-        record_llm_usage(
-            news_id=news_id if news_id is not None else _usage_news_id.get(),
+        bench = benchmark_run_id if benchmark_run_id is not None else _benchmark_run_id.get()
+        note_out = (note or "")[:400]
+        if is_live_test():
+            tag = f"live_test:{live_test_date()}"
+            note_out = f"{tag} {note_out}".strip()[:400]
+        nid = news_id if news_id is not None else _usage_news_id.get()
+        usd = estimate_usd(int(prompt_tokens or 0), int(completion_tokens or 0), model)
+        usage_id = record_llm_usage(
+            news_id=nid,
             task=task or _usage_task.get() or "chat",
             model=model,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             ok=ok,
-            note=note[:400],
+            note=note_out,
             cached_tokens=cached_tokens,
+            benchmark_run_id=bench or "",
+            ms=ms,
+            usd=usd,
         )
+        record_llm_call_log(
+            usage_id=usage_id,
+            news_id=nid,
+            task=task or _usage_task.get() or "chat",
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cached_tokens=cached_tokens,
+            ok=ok,
+            note=note_out,
+            benchmark_run_id=bench or "",
+            ms=ms,
+            usd=usd,
+            http_status=http_status,
+            images_n=images_n,
+            image_bytes=image_bytes,
+            request_json=_payload_for_log(request_payload, messages=messages),
+            response_text=response_text,
+        )
+        if bench:
+            record_benchmark_stage(
+                run_id=bench,
+                news_id=nid or "",
+                stage=task or _usage_task.get() or "chat",
+                model=model,
+                p_in=prompt_tokens,
+                p_out=completion_tokens,
+                cached=cached_tokens,
+                ms=ms,
+            )
     except Exception as e:
         print(f"[editorial] usage log skip: {e}", flush=True)
 
@@ -215,6 +286,8 @@ class OpenAIClient:
         task: str = "chat",
         extra: dict[str, Any] | None = None,
         timeout: float | None = None,
+        vision_images_n: int = 0,
+        vision_image_bytes: int = 0,
     ) -> str:
         errors: list[str] = []
         for name in self._model_chain(model, fallback):
@@ -232,6 +305,7 @@ class OpenAIClient:
             if temperature is not None and name not in self._omit_temperature:
                 payload["temperature"] = temperature
 
+            t0 = time.monotonic()
             switched = True
             while switched:
                 switched = False
@@ -253,6 +327,7 @@ class OpenAIClient:
                     self._omit_temperature.add(name)
                     switched = True
                     continue
+            ms = int((time.monotonic() - t0) * 1000)
 
             usage = {}
             try:
@@ -264,16 +339,27 @@ class OpenAIClient:
             completion_tokens = int(usage.get("completion_tokens") or 0)
             cached_tokens = _cached_tokens_from_usage(usage if isinstance(usage, dict) else {})
 
+            log_kw = dict(
+                task=task,
+                model=name,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cached_tokens=cached_tokens,
+                ms=ms,
+                http_status=r.status_code,
+                request_payload=payload,
+                messages=messages,
+                images_n=vision_images_n,
+                image_bytes=vision_image_bytes,
+            )
+
             if r.status_code >= 400:
                 note = f"{r.status_code}: {body[:240]}"
                 _record_usage(
-                    task=task,
-                    model=name,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    cached_tokens=cached_tokens,
+                    **log_kw,
                     ok=False,
                     note=note,
+                    response_text=body[:8000],
                 )
                 if _is_model_missing(r.status_code, body):
                     print(f"[editorial] openai model miss {name}: {note}", flush=True)
@@ -285,34 +371,25 @@ class OpenAIClient:
                 text = (data["choices"][0]["message"].get("content") or "").strip()
             except (KeyError, IndexError, TypeError) as e:
                 _record_usage(
-                    task=task,
-                    model=name,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    cached_tokens=cached_tokens,
+                    **log_kw,
                     ok=False,
                     note=str(e),
+                    response_text=str(data)[:8000],
                 )
                 raise RuntimeError(f"Некорректный ответ OpenAI: {data}") from e
             if not text:
                 _record_usage(
-                    task=task,
-                    model=name,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    cached_tokens=cached_tokens,
+                    **log_kw,
                     ok=False,
                     note="empty content",
+                    response_text=str(data)[:8000],
                 )
                 errors.append(f"{name}: empty content")
                 continue
             _record_usage(
-                task=task,
-                model=name,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                cached_tokens=cached_tokens,
+                **log_kw,
                 ok=True,
+                response_text=text,
             )
             print(
                 f"[editorial] openai {task} model={name} "
@@ -354,12 +431,15 @@ class OpenAIClient:
             {"role": "system", "content": "Отвечай только валидным JSON-объектом, без markdown."},
             {"role": "user", "content": content},
         ]
+        img_list = [x for x in images if x]
         return self.chat_json(
             model,
             messages,
             max_tokens=max_tokens,
             fallback=fallback,
             task=task or "image_vision",
+            vision_images_n=len(img_list),
+            vision_image_bytes=sum(len(x) for x in img_list),
         )
 
     def chat_json(
@@ -371,6 +451,8 @@ class OpenAIClient:
         temperature: float | None = None,
         fallback: str | list[str] | None = None,
         task: str = "chat",
+        vision_images_n: int = 0,
+        vision_image_bytes: int = 0,
     ) -> dict[str, Any]:
         raw = self.chat(
             model,
@@ -380,6 +462,8 @@ class OpenAIClient:
             temperature=temperature,
             fallback=fallback,
             task=task,
+            vision_images_n=vision_images_n,
+            vision_image_bytes=vision_image_bytes,
         )
         return parse_json_object(raw)
 
@@ -408,7 +492,9 @@ class OpenAIClient:
                 "max_completion_tokens": 160,
                 **payload_extra,
             }
+            t0 = time.monotonic()
             r = self._post("/chat/completions", payload, timeout=max(self.timeout, 120.0))
+            ms = int((time.monotonic() - t0) * 1000)
             body = r.text or ""
             try:
                 data = r.json()
@@ -417,15 +503,25 @@ class OpenAIClient:
             usage = data.get("usage") or {}
             prompt_tokens = int(usage.get("prompt_tokens") or 0)
             completion_tokens = int(usage.get("completion_tokens") or 0)
+            cached_tokens = _cached_tokens_from_usage(usage if isinstance(usage, dict) else {})
+            log_kw = dict(
+                task=task,
+                model=name,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cached_tokens=cached_tokens,
+                ms=ms,
+                http_status=r.status_code,
+                request_payload=payload,
+                messages=messages,
+            )
             if r.status_code >= 400:
                 note = f"{r.status_code}: {body[:240]}"
                 _record_usage(
-                    task=task,
-                    model=name,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
+                    **log_kw,
                     ok=False,
                     note=note,
+                    response_text=body[:8000],
                 )
                 if _is_model_missing(r.status_code, body):
                     errors.append(note)
@@ -435,12 +531,10 @@ class OpenAIClient:
             text = str(msg.get("content") or "")
             hits = _hits_from_search(text, msg.get("annotations") or [], limit=max_results)
             _record_usage(
-                task=task,
-                model=name,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
+                **log_kw,
                 ok=bool(hits),
                 note="" if hits else "empty search",
+                response_text=text[:8000],
             )
             print(
                 f"[editorial] openai search model={name} hits={len(hits)} "
@@ -464,23 +558,39 @@ class OpenAIClient:
             "size": size,
             "n": 1,
         }
+        t0 = time.monotonic()
         r = self._post("/images/generations", payload, timeout=max(self.timeout, 90.0))
+        ms = int((time.monotonic() - t0) * 1000)
         body = r.text or ""
         try:
             data = r.json()
         except Exception:
             data = {}
+        log_kw = dict(
+            task=task,
+            model=model,
+            prompt_tokens=0,
+            completion_tokens=0,
+            ms=ms,
+            http_status=r.status_code,
+            request_payload=payload,
+        )
         if r.status_code >= 400:
-            _record_usage(task=task, model=model, prompt_tokens=0, completion_tokens=0, ok=False, note=body[:240])
+            _record_usage(**log_kw, ok=False, note=body[:240], response_text=body[:4000])
             raise RuntimeError(f"OpenAI image {r.status_code}: {body[:400]}")
         items = data.get("data") or []
         if not items:
-            _record_usage(task=task, model=model, prompt_tokens=0, completion_tokens=0, ok=False, note="empty image")
+            _record_usage(**log_kw, ok=False, note="empty image", response_text=str(data)[:4000])
             raise RuntimeError("OpenAI image: пустой ответ")
         b64 = items[0].get("b64_json")
         if b64:
             raw = base64.b64decode(b64)
-            _record_usage(task=task, model=model, prompt_tokens=0, completion_tokens=0, ok=True, note=size)
+            _record_usage(
+                **log_kw,
+                ok=True,
+                note=size,
+                response_text=f"[image {len(raw)} bytes b64_json, not stored]",
+            )
             return raw
         url = items[0].get("url")
         if not url:
@@ -489,7 +599,12 @@ class OpenAIClient:
             img = client.get(url)
         if img.status_code >= 400:
             raise RuntimeError(f"OpenAI image download {img.status_code}")
-        _record_usage(task=task, model=model, prompt_tokens=0, completion_tokens=0, ok=True, note=size)
+        _record_usage(
+            **log_kw,
+            ok=True,
+            note=size,
+            response_text=f"[image {len(img.content)} bytes from url, not stored]",
+        )
         return img.content
 
 

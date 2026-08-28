@@ -94,6 +94,10 @@ class MemeMediaSelectTests(unittest.TestCase):
             patch("app.config.get_settings", return_value=MagicMock(meme_source_enabled=True)),
             patch("parsers.telegram.parse_telegram", return_value=("ch", [post])),
             patch("editorial.sources._extract_entities", return_value={}),
+            patch(
+                "editorial.soccerblog_gate.soccerblog_gate",
+                return_value={"kind": "reject", "confidence": 0.95, "reason": "transfer"},
+            ),
         ):
             items = parse_telegram_meme_feed(feed)
         self.assertEqual(items, [])
@@ -118,6 +122,15 @@ class MemeMediaSelectTests(unittest.TestCase):
             patch("app.config.get_settings", return_value=MagicMock(meme_source_enabled=True)),
             patch("parsers.telegram.parse_telegram", return_value=("ch", [post])),
             patch("editorial.sources._extract_entities", return_value={}),
+            patch(
+                "editorial.soccerblog_gate.soccerblog_gate",
+                return_value={
+                    "kind": "meme",
+                    "confidence": 0.9,
+                    "reason": "lifestyle",
+                    "text_lang": "ru",
+                },
+            ),
         ):
             items = parse_telegram_meme_feed(feed)
         self.assertEqual(len(items), 1)

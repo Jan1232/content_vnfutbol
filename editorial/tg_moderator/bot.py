@@ -112,6 +112,11 @@ def handle_callback(update: dict[str, Any]) -> None:
             return
 
     if action == "ok":
+        from editorial.live_test import is_live_test
+
+        if is_live_test():
+            api.answer_callback(cb_id, "тест — публикация отключена", show_alert=True)
+            return
         msg_id = _card_message_id(cb)
         cfg = _channel_for_row(row)
         res = publish_approved(news_id)

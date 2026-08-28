@@ -34,15 +34,100 @@
 {% endif %}
 
 {% if usage %}
+{% for period in [usage.h24, usage.d7] %}
 <div class="channel-card" style="padding:16px;margin-bottom:20px">
-  <div class="title">Расход LLM за 24ч (Platform API)</div>
-  <div class="sub">вызовов {{ usage.n }} · prompt {{ usage.prompt_tokens }} · completion {{ usage.completion_tokens }} · ≈ ${{ '%.4f'|format(usage.usd) }}</div>
-  {% if usage.rows %}
-  <div class="detail" style="margin-top:8px">
-    {% for row in usage.rows %}
-      <span class="stat-chip">{{ row.task }} {{ row.model }} · {{ row.n }} · in {{ row.prompt_tokens }} · ≈ ${{ '%.4f'|format(row.usd) }}</span>
-    {% endfor %}
+  <div class="title">Расход LLM за {{ period.label }} (Platform API)</div>
+  <div class="sub">
+    вызовов {{ period.n }} · prompt {{ period.prompt_tokens }} · completion {{ period.completion_tokens }}
+    · cached {{ period.cached_tokens }}
+    · total {{ period.total_tokens }} · ≈ ${{ '%.2f'|format(period.usd) }}
   </div>
+  {% if period.rows %}
+  <table style="width:100%;margin-top:10px;border-collapse:collapse;font-size:0.85rem">
+    <thead>
+      <tr style="text-align:left;opacity:.7">
+        <th style="padding:4px 8px">task</th>
+        <th style="padding:4px 8px">model</th>
+        <th style="padding:4px 8px">calls</th>
+        <th style="padding:4px 8px">p_in</th>
+        <th style="padding:4px 8px">p_out</th>
+        <th style="padding:4px 8px">cached</th>
+        <th style="padding:4px 8px">avg in</th>
+        <th style="padding:4px 8px">≈$</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in period.rows %}
+      <tr style="border-top:1px solid rgba(255,255,255,.08)">
+        <td style="padding:4px 8px">{{ row.task }}</td>
+        <td style="padding:4px 8px">{{ row.model }}</td>
+        <td style="padding:4px 8px">{{ row.n }}</td>
+        <td style="padding:4px 8px">{{ row.prompt_tokens }}</td>
+        <td style="padding:4px 8px">{{ row.completion_tokens }}</td>
+        <td style="padding:4px 8px">{{ row.cached_tokens }}</td>
+        <td style="padding:4px 8px">{{ row.avg_prompt }}</td>
+        <td style="padding:4px 8px">${{ '%.3f'|format(row.usd) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty" style="margin-top:8px">Нет вызовов за период.</p>
+  {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
+{% if usage and usage.call_log %}
+<div class="channel-card" style="padding:16px;margin-bottom:20px">
+  <div class="title">Полный лог LLM-вызовов (request/response)</div>
+  <div class="sub">
+    строк {{ usage.call_log.rows }} · ≈ {{ usage.call_log.mb }} MB на диске
+    · хранение {{ usage.call_log.retention_days }} дн
+  </div>
+  <p class="sub" style="margin-top:8px;opacity:.75">
+    Таблица <code>editorial_llm_call_log</code>: полный JSON запроса (без base64 картинок), текст ответа, ms, $.
+    Агрегаты — в <code>editorial_llm_usage</code> выше.
+  </p>
+</div>
+{% endif %}
+
+{% if usage.last_benchmark %}
+<div class="channel-card" style="padding:16px;margin-bottom:20px">
+  <div class="title">Последний cost_benchmark · {{ usage.last_benchmark.run_id }}</div>
+  <div class="sub">
+    канал {{ usage.last_benchmark.channel }} · {{ usage.last_benchmark.totals.news_count }} новостей
+    · ≈ ${{ '%.3f'|format(usage.last_benchmark.totals.usd) }}
+    · avg/post ${{ '%.4f'|format(usage.last_benchmark.totals.avg_usd_per_post) }}
+    · cached {{ usage.last_benchmark.totals.cached }}
+  </div>
+  {% if usage.last_benchmark.matrix %}
+  <table style="width:100%;margin-top:10px;border-collapse:collapse;font-size:0.85rem">
+    <thead>
+      <tr style="text-align:left;opacity:.7">
+        <th style="padding:4px 8px">stage</th>
+        <th style="padding:4px 8px">model</th>
+        <th style="padding:4px 8px">calls</th>
+        <th style="padding:4px 8px">p_in</th>
+        <th style="padding:4px 8px">p_out</th>
+        <th style="padding:4px 8px">cached</th>
+        <th style="padding:4px 8px">≈$</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in usage.last_benchmark.matrix %}
+      <tr style="border-top:1px solid rgba(255,255,255,.08)">
+        <td style="padding:4px 8px">{{ row.stage }}</td>
+        <td style="padding:4px 8px">{{ row.model }}</td>
+        <td style="padding:4px 8px">{{ row.calls }}</td>
+        <td style="padding:4px 8px">{{ row.p_in }}</td>
+        <td style="padding:4px 8px">{{ row.p_out }}</td>
+        <td style="padding:4px 8px">{{ row.cached }}</td>
+        <td style="padding:4px 8px">${{ '%.4f'|format(row.usd) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
   {% endif %}
 </div>
 {% endif %}

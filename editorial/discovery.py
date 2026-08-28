@@ -91,3 +91,46 @@ def fetch_fresh_news(channel: EditorialChannelConfig) -> list[NewsItem]:
                     batch = batch[-left:]
         out.extend(batch)
     return out
+
+
+def fetch_news_for_date(channel: EditorialChannelConfig, date_str: str) -> list[NewsItem]:
+    """Новости с published_at в пределах календарного дня MATCHDAY_TZ (без freshness cutoff)."""
+    from zoneinfo import ZoneInfo
+
+    settings = get_settings()
+    tz = ZoneInfo(settings.matchday_tz or "Asia/Yekaterinburg")
+    try:
+        day = datetime.strptime(date_str.strip(), "%Y-%m-%d").date()
+    except ValueError:
+        return []
+    feeds = channel.feeds or DEFAULT_FEEDS
+    out: list[NewsItem] = []
+
+    for feed in feeds:
+        try:
+            items = fetch_feed(feed)
+        except Exception as e:
+            print(f"[editorial] feed {feed.name} fail: {e}", flush=True)
+            continue
+        for item in items:
+            published = item.published_at
+            if published.tzinfo is None:
+                published = published.replace(tzinfo=timezone.utc)
+            if published.astimezone(tz).date() != day:
+                continue
+            if not item.event_type or item.event_type == "other":
+                item.event_type = classify_event_rules(f"{item.title}\n{item.body}")
+            if channel.competitions and item.competition:
+                if item.competition not in channel.competitions and item.competition not in {
+                    "CL",
+                    "EL",
+                    "ECL",
+                    "WC",
+                    "EC",
+                    "UNL",
+                    "NT",
+                }:
+                    continue
+            out.append(item)
+    print(f"[editorial] fetch_news_for_date {date_str}: {len(out)} items", flush=True)
+    return out

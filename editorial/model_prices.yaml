@@ -9,9 +9,15 @@ models:
   gpt-5-mini:
     input_per_m: 0.125
     output_per_m: 1.00
+  gpt-5-nano:
+    input_per_m: 0.05
+    output_per_m: 0.40
   gpt-5-search-api:
     input_per_m: 0.20
     output_per_m: 1.20
   gpt-image-1-mini:
     input_per_m: 0.0
     output_per_m: 0.0
+  gpt-4o-mini:
+    input_per_m: 0.15
+    output_per_m: 0.60

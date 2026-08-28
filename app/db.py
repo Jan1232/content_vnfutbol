@@ -349,6 +349,69 @@ def init_db() -> None:
         )
         _ensure_column(conn, "editorial_story_log", "summary", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(conn, "editorial_llm_usage", "cached_tokens", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "editorial_llm_usage", "benchmark_run_id", "TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS editorial_cost_benchmark (
+              id         INTEGER PRIMARY KEY,
+              run_id     TEXT NOT NULL,
+              news_id    TEXT NOT NULL DEFAULT '',
+              stage      TEXT NOT NULL DEFAULT '',
+              model      TEXT NOT NULL DEFAULT '',
+              p_in       INTEGER NOT NULL DEFAULT 0,
+              p_out      INTEGER NOT NULL DEFAULT 0,
+              cached     INTEGER NOT NULL DEFAULT 0,
+              usd        REAL NOT NULL DEFAULT 0,
+              ms         INTEGER NOT NULL DEFAULT 0,
+              ts         TEXT DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_cost_bench_run
+            ON editorial_cost_benchmark(run_id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS editorial_llm_call_log (
+              id                INTEGER PRIMARY KEY,
+              usage_id          INTEGER,
+              ts                TEXT DEFAULT (datetime('now')),
+              news_id           TEXT NOT NULL DEFAULT '',
+              task              TEXT NOT NULL DEFAULT '',
+              model             TEXT NOT NULL DEFAULT '',
+              prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+              completion_tokens INTEGER NOT NULL DEFAULT 0,
+              cached_tokens     INTEGER NOT NULL DEFAULT 0,
+              usd               REAL NOT NULL DEFAULT 0,
+              ms                INTEGER NOT NULL DEFAULT 0,
+              ok                INTEGER NOT NULL DEFAULT 0,
+              http_status       INTEGER NOT NULL DEFAULT 0,
+              images_n          INTEGER NOT NULL DEFAULT 0,
+              image_bytes       INTEGER NOT NULL DEFAULT 0,
+              request_json      TEXT NOT NULL DEFAULT '',
+              response_text     TEXT NOT NULL DEFAULT '',
+              note              TEXT NOT NULL DEFAULT '',
+              benchmark_run_id  TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_llm_call_log_ts
+            ON editorial_llm_call_log(ts)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_llm_call_log_usage
+            ON editorial_llm_call_log(usage_id)
+            """
+        )
+        _ensure_column(conn, "editorial_llm_usage", "ms", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "editorial_llm_usage", "usd", "REAL NOT NULL DEFAULT 0")
 
 
 def upsert_channel(conn: sqlite3.Connection, chat: dict[str, Any]) -> None:

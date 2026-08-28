@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     editorial_llm_transport: str = "openai"
     editorial_text_model: str = "gpt-5.6-luna"
     editorial_text_fallback: str = "gpt-5-mini"
+    editorial_classify_model: str = "gpt-5.6-luna"
+    editorial_classify_fallback: str = "gpt-5.6-luna"
     editorial_reasoning_model: str = "gpt-5.6-terra"
     editorial_reasoning_fallback: str = "gpt-5.6-luna"
     editorial_search_model: str = "gpt-5-search-api"
@@ -58,8 +60,12 @@ class Settings(BaseSettings):
     editorial_allow_groq_fallback: bool = False
     editorial_llm_timeout: int = 60
     editorial_llm_max_retry: int = 4
-    editorial_vision_model: str = "gpt-4o-mini"
-    imagery_candidates_max: int = 8
+    editorial_vision_model: str = "gpt-5.6-luna"
+    vision_ab: bool = False
+    vision_skip_for_og: bool = True
+    vision_single_candidate: bool = True
+    imagery_candidates_max: int = 4
+    imagery_preview_max_side: int = 512
     imagery_min_relevance: float = 0.55
     imagery_max_upscale: float = 1.75
     imagery_min_sharpness: float = 100.0
@@ -120,6 +126,19 @@ class Settings(BaseSettings):
     story_min_gap_min: int = 180
     story_incident_window_days: int = 3
     story_llm_relation_enabled: bool = True
+    story_relation_hybrid: bool = True
+    reasoning_escalate: float = 0.7
+    # soccerblog multimodal gate (round-7)
+    soccerblog_gate_enabled: bool = True
+    soccerblog_auto_confidence: float = 0.8
+    soccerblog_gate_model: str = ""
+    editorial_cost_benchmark: bool = False
+    editorial_live_test: bool = False
+    editorial_test_date: str = ""
+    # полный лог запросов/ответов LLM (отдельная таблица, автоочистка)
+    editorial_llm_full_log: bool = True
+    editorial_llm_full_log_retention_days: int = 7
+    editorial_llm_full_log_max_response_chars: int = 32_000
     # автоотклонение карточек в TG-модерации (дневные часы Екб)
     moderation_auto_reject_min: int = 60
     moderation_auto_reject_tz: str = "Asia/Yekaterinburg"

@@ -1066,7 +1066,10 @@ def quality_ok(path: Path | str, template: str = "default") -> tuple[bool, str]:
     return True, "ok"
 
 
-def preview_jpeg(path: Path | str, *, max_side: int = 512, quality: int = 70) -> bytes:
+def preview_jpeg(path: Path | str, *, max_side: int | None = None, quality: int = 70) -> bytes:
+    if max_side is None:
+        settings = _imagery_settings()
+        max_side = int(getattr(settings, "imagery_preview_max_side", 512) or 512)
     im = _open_rgb(Path(path))
     w, h = im.size
     scale = min(1.0, max_side / max(w, h, 1))
@@ -1183,6 +1186,231 @@ def _manual_query_match(url: str, query: str, item: dict[str, Any]) -> bool:
     return _strong_text_match(url, item)
 
 
+_VIA_PRIORITY: dict[str, int] = {
+    "article": 0,
+    "og": 0,
+    "wikimedia": 1,
+    "wiki": 1,
+    "yandex": 2,
+    "bing": 2,
+    "serpapi": 2,
+}
+
+
+def _via_rank(via: str) -> int:
+    return _VIA_PRIORITY.get((via or "").strip().lower(), 3)
+
+
+def _is_og_source(via: str) -> bool:
+    return (via or "").strip().lower() in {"article", "og"}
+
+
+def _is_search_source(via: str) -> bool:
+    return (via or "").strip().lower() in {"yandex", "bing", "wikimedia", "wiki", "serpapi"}
+
+
+def _sharpness_score(path: Path) -> float:
+    try:
+        return _laplacian_var(_gray_array(_open_rgb(path)))
+    except Exception:
+        return 0.0
+
+
+def _script_pick_candidate(candidates: list[ImageCandidate]) -> ImageCandidate | None:
+    """Скриптовый выбор лучшего: og/article > wiki > поиск; внутри — разрешение и резкость."""
+    if not candidates:
+        return None
+
+    def key(c: ImageCandidate) -> tuple[int, int, float]:
+        return (_via_rank(c.via), -(c.width * c.height), -_sharpness_score(c.path))
+
+    return min(candidates, key=key)
+
+
+def _should_call_vision(cand: ImageCandidate, item: dict[str, Any]) -> bool:
+    settings = _imagery_settings()
+    if bool(getattr(settings, "vision_skip_for_og", True)) and _is_og_source(cand.via):
+        return False
+    if _is_search_source(cand.via):
+        return True
+    if _needs_strict_attribution(item) and not _is_og_source(cand.via):
+        return True
+    return False
+
+
+def _apply_vision_row(
+    cand: ImageCandidate,
+    row: dict[str, Any],
+    item: dict[str, Any],
+    *,
+    min_rel: float,
+) -> bool:
+    relevant = bool(row.get("relevant"))
+    subject = bool(row.get("subject_present"))
+    overlay = bool(row.get("has_overlay_text"))
+    attr_match = row.get("attribution_match")
+    strict = _needs_strict_attribution(item)
+    if strict and attr_match is False:
+        relevant = False
+    try:
+        score = float(row.get("score") if row.get("score") is not None else 0.0)
+    except (TypeError, ValueError):
+        score = 0.0
+    if overlay:
+        relevant = False
+    cand.relevant = relevant
+    cand.subject_present = subject
+    cand.relevance = score
+    cand.reason = str(row.get("reason") or row.get("who") or "")[:240]
+    if overlay and "текст" not in cand.reason.lower():
+        cand.reason = ("текст на фото. " + cand.reason).strip()[:240]
+    cand.quality_label = str(row.get("quality") or "")
+    cand.extras = {
+        "who": str(row.get("who") or "")[:160],
+        "wrong_subject": bool(row.get("wrong_subject")),
+        "has_overlay_text": overlay,
+        "club_on_photo": str(row.get("club_on_photo") or "")[:80],
+        "league_on_photo": str(row.get("league_on_photo") or "")[:40],
+        "attribution_match": attr_match,
+    }
+    return bool(relevant and subject and score >= min_rel)
+
+
+def verify_single_photo(
+    cand: ImageCandidate,
+    item: dict[str, Any],
+    *,
+    trace: dict[str, Any] | None = None,
+) -> ImageCandidate | None:
+    """Финальная vision-проверка одной выбранной фотки (атрибуция)."""
+    settings = _imagery_settings()
+    min_rel = float(getattr(settings, "imagery_min_relevance", 0.55) or 0.55)
+    model = (getattr(settings, "editorial_vision_model", None) or "gpt-5.6-luna").strip()
+    prompt = _relevance_prompt(item, 1)
+    try:
+        from editorial.openai_client import get_client
+
+        client = get_client()
+        vision_ab = bool(getattr(settings, "vision_ab", False))
+        ab_models = [
+            ("gpt-4o-mini", "image_vision_ab_mini"),
+            ((settings.editorial_text_model or "gpt-5.6-luna").strip(), "image_vision_ab_luna"),
+        ]
+        if vision_ab:
+            for ab_model, ab_task in ab_models:
+                try:
+                    client.vision(
+                        ab_model,
+                        [preview_jpeg(cand.path)],
+                        prompt,
+                        json_mode=True,
+                        max_tokens=400,
+                        task=ab_task,
+                    )
+                except Exception as e:
+                    print(f"[editorial] vision A/B {ab_task} fail: {e}", flush=True)
+        data = client.vision(
+            model,
+            [preview_jpeg(cand.path)],
+            prompt,
+            json_mode=True,
+            max_tokens=400,
+            task="image_vision",
+        )
+        row: dict[str, Any] = {}
+        if isinstance(data, dict):
+            rows = data.get("results")
+            if isinstance(rows, list) and rows:
+                row = rows[0] if isinstance(rows[0], dict) else {}
+            else:
+                row = data
+        kept = _apply_vision_row(cand, row, item, min_rel=min_rel)
+        if trace is not None:
+            trace["vision"] = {
+                "model": model,
+                "prompt": prompt,
+                "min_relevance": min_rel,
+                "single": True,
+                "candidates": [
+                    {
+                        "idx": 0,
+                        "url": cand.url,
+                        "via": cand.via,
+                        "width": cand.width,
+                        "height": cand.height,
+                        "path": str(cand.path),
+                        "relevant": cand.relevant,
+                        "subject_present": cand.subject_present,
+                        "wrong_subject": cand.extras.get("wrong_subject"),
+                        "has_overlay_text": cand.extras.get("has_overlay_text"),
+                        "score": cand.relevance,
+                        "reason": cand.reason,
+                        "kept": kept,
+                    }
+                ],
+                "error": None,
+            }
+        if kept:
+            return cand
+        print(
+            f"[editorial] vision drop via={cand.via} score={cand.relevance:.2f} {cand.reason[:80]}",
+            flush=True,
+        )
+        return None
+    except Exception as e:
+        print(f"[editorial] single vision fail, text fallback: {e}", flush=True)
+        if _strong_text_match(cand.url, item):
+            cand.relevant = True
+            cand.subject_present = True
+            cand.relevance = 0.6
+            cand.reason = "text-match fallback"
+            if trace is not None:
+                trace["vision"] = {"model": model, "single": True, "error": str(e)[:400]}
+            return cand
+        if trace is not None:
+            trace["vision"] = {"model": model, "single": True, "error": str(e)[:400]}
+        return None
+
+
+def _pick_with_optional_vision(
+    pool: list[ImageCandidate],
+    item: dict[str, Any],
+    *,
+    trace: dict[str, Any] | None = None,
+) -> ImageCandidate | None:
+    """Скрипт выбирает лучшего; vision — только на поисковых / строгой атрибуции."""
+    if not pool:
+        return None
+    ordered = sorted(
+        pool,
+        key=lambda c: (_via_rank(c.via), -(c.width * c.height), -_sharpness_score(c.path)),
+    )
+    tried: set[str] = set()
+    for cand in ordered:
+        key = cand.url
+        if key in tried:
+            continue
+        tried.add(key)
+        if trace is not None and "script_pick" not in trace:
+            trace["script_pick"] = {
+                "url": cand.url,
+                "via": cand.via,
+                "width": cand.width,
+                "height": cand.height,
+            }
+        if not _should_call_vision(cand, item):
+            cand.relevant = True
+            cand.subject_present = True
+            cand.relevance = 0.85
+            cand.reason = "og:image — доверие первоисточнику"
+            if trace is not None:
+                trace["vision_skipped"] = f"via={cand.via}"
+            return cand
+        verified = verify_single_photo(cand, item, trace=trace)
+        if verified:
+            return verified
+    return None
+
 def score_relevance(
     candidates: list[ImageCandidate],
     item: dict[str, Any],
@@ -1197,14 +1425,49 @@ def score_relevance(
     min_rel = float(getattr(settings, "imagery_min_relevance", 0.55) or 0.55)
     if manual_relaxed:
         min_rel = min(min_rel, 0.35)
-    model = (getattr(settings, "editorial_vision_model", None) or "gpt-4o-mini").strip()
+
+    settings = _imagery_settings()
+    use_single = bool(getattr(settings, "vision_single_candidate", True))
+    if len(candidates) == 1 and not manual_relaxed and use_single:
+        cand = candidates[0]
+        if not _should_call_vision(cand, item):
+            cand.relevant = True
+            cand.subject_present = True
+            cand.relevance = 0.85
+            cand.reason = "og:image — доверие первоисточнику"
+            if trace is not None:
+                trace["vision_skipped"] = f"via={cand.via}"
+            return [cand]
+        verified = verify_single_photo(cand, item, trace=trace)
+        return [verified] if verified else []
+
+    model = (getattr(settings, "editorial_vision_model", None) or "gpt-5.6-luna").strip()
     prompt = _relevance_prompt(item, len(candidates))
     max_tokens = min(2200, 180 + len(candidates) * 140)
     try:
         from editorial.openai_client import get_client
 
         previews = [preview_jpeg(c.path) for c in candidates]
-        data = get_client().vision(
+        client = get_client()
+        vision_ab = bool(getattr(settings, "vision_ab", False))
+        ab_models = [
+            ("gpt-4o-mini", "image_vision_ab_mini"),
+            ((settings.editorial_text_model or "gpt-5.6-luna").strip(), "image_vision_ab_luna"),
+        ]
+        if vision_ab:
+            for ab_model, ab_task in ab_models:
+                try:
+                    client.vision(
+                        ab_model,
+                        previews,
+                        prompt,
+                        json_mode=True,
+                        max_tokens=max_tokens,
+                        task=ab_task,
+                    )
+                except Exception as e:
+                    print(f"[editorial] vision A/B {ab_task} fail: {e}", flush=True)
+        data = client.vision(
             model,
             previews,
             prompt,
@@ -1633,13 +1896,21 @@ def find_photo(item: dict[str, Any], *, template_name: str = "default") -> str |
             trace["outcome"] = "held_quality"
             return None
 
-        ranked = score_relevance(pool, item, trace=trace)
-        ranked = dedupe_image_candidates(ranked)
-        if not ranked:
-            print("[editorial] no relevant image", flush=True)
-            trace["outcome"] = "held_vision"
-            return None
-        best = ranked[0]
+        use_script_pick = bool(getattr(settings, "vision_single_candidate", True))
+        if use_script_pick:
+            best = _pick_with_optional_vision(pool, item, trace=trace)
+            if not best:
+                print("[editorial] no relevant image", flush=True)
+                trace["outcome"] = "held_vision"
+                return None
+        else:
+            ranked = score_relevance(pool, item, trace=trace)
+            ranked = dedupe_image_candidates(ranked)
+            if not ranked:
+                print("[editorial] no relevant image", flush=True)
+                trace["outcome"] = "held_vision"
+                return None
+            best = ranked[0]
         try:
             cropped = smart_crop(best.path, tw, th, template=template)
         except Exception as e:

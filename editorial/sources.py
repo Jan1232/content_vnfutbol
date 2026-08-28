@@ -106,10 +106,11 @@ def parse_rss_feed(feed: EditorialFeed) -> list[NewsItem]:
 
 
 def parse_telegram_meme_feed(feed: EditorialFeed) -> list[NewsItem]:
-    """TG-мем-источник: медиа + только lifestyle (трансферы/матчи/составы режем по логам модерации)."""
+    """TG-мем-источник: мультимодальный soccerblog_gate → meme/news/reject."""
     from app.config import get_settings
     from parsers.telegram import parse_telegram
-    from editorial.topic_gate import MEME_HARD_EVENT_TYPES, classify_meme_event
+    from editorial.soccerblog_gate import soccerblog_gate
+    from editorial.topic_gate import classify_event_rules
 
     handle = (feed.handle or "").strip().lstrip("@")
     if not handle:
@@ -136,21 +137,29 @@ def parse_telegram_meme_feed(feed: EditorialFeed) -> list[NewsItem]:
             continue
         title = (post.text or post.title or feed.name or "meme").strip()[:200] or "meme"
         body = (post.text or "").strip()
-        # по логам: lifestyle→transfer/match/lineup → reject; в ленту не тащим
-        classified = classify_meme_event(f"{title}\n{body}")
-        if classified in MEME_HARD_EVENT_TYPES:
+        verdict = soccerblog_gate(f"{title}\n{body}", media, media_type=media_type)
+        kind = str(verdict.get("kind") or "reject")
+        if kind == "reject":
             continue
         entities = _extract_entities(title, body)
-        entities["meme_source"] = feed.name
-        entities["wrap_template"] = bool(getattr(feed, "wrap_template", False))
-        entities["meme_text_class"] = classified
+        entities["soccerblog_gate"] = verdict
+        entities["soccerblog_source"] = feed.name
+        if kind == "meme":
+            entities["meme_source"] = feed.name
+            event_type = "lifestyle"
+            meme_flag = True
+        else:
+            event_type = classify_event_rules(f"{title}\n{body}") or "lifestyle"
+            if event_type in {"transfer", "injury", "match_result", "lineup", "official_statement"}:
+                event_type = "lifestyle"
+            meme_flag = False
         item = NewsItem(
             external_id=_stable_id(feed.name, post.external_id),
             source=feed.name,
             url=post.source_url or url,
             title=title,
             body=body,
-            lang="ru",
+            lang=str(verdict.get("text_lang") or "ru")[:8] or "ru",
             published_at=datetime.now(timezone.utc),
             entities=entities,
             raw={
@@ -158,10 +167,14 @@ def parse_telegram_meme_feed(feed: EditorialFeed) -> list[NewsItem]:
                 "post_kind": post_kind,
                 "media_type": media_type,
                 "wrap_template": bool(getattr(feed, "wrap_template", False)),
+                "soccerblog_kind": kind,
             },
-            event_type="lifestyle",
+            event_type=event_type,
             competition="",
         )
+        if meme_flag:
+            entities["wrap_template"] = bool(getattr(feed, "wrap_template", False))
+            entities["meme_text_class"] = "lifestyle"
         out.append(item)
     return out
 
