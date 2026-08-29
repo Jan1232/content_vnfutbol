@@ -98,6 +98,11 @@ def _unsupported_param(body: str, name: str) -> bool:
     return "unsupported" in blob and name.lower() in blob
 
 
+def _is_reasoning_model(name: str) -> bool:
+    n = (name or "").lower()
+    return any(x in n for x in ("luna", "terra", "o1", "o3", "o4"))
+
+
 def _record_usage(
     *,
     task: str,
@@ -214,6 +219,7 @@ class OpenAIClient:
         self.max_retry = max(1, int(max_retry))
         self._omit_temperature: set[str] = set()
         self._prefer_max_tokens: set[str] = set()
+        self._omit_reasoning_effort: set[str] = set()
 
     @classmethod
     def from_settings(cls) -> "OpenAIClient":
@@ -286,6 +292,7 @@ class OpenAIClient:
         task: str = "chat",
         extra: dict[str, Any] | None = None,
         timeout: float | None = None,
+        reasoning_effort: str | None = None,
         vision_images_n: int = 0,
         vision_image_bytes: int = 0,
     ) -> str:
@@ -304,6 +311,8 @@ class OpenAIClient:
                 payload[token_key] = int(max_tokens)
             if temperature is not None and name not in self._omit_temperature:
                 payload["temperature"] = temperature
+            if reasoning_effort and name not in self._omit_reasoning_effort and _is_reasoning_model(name):
+                payload["reasoning_effort"] = reasoning_effort
 
             t0 = time.monotonic()
             switched = True
@@ -325,6 +334,15 @@ class OpenAIClient:
                 if r.status_code == 400 and "temperature" in payload and _unsupported_param(body, "temperature"):
                     payload.pop("temperature", None)
                     self._omit_temperature.add(name)
+                    switched = True
+                    continue
+                if (
+                    r.status_code == 400
+                    and "reasoning_effort" in payload
+                    and _unsupported_param(body, "reasoning_effort")
+                ):
+                    payload.pop("reasoning_effort", None)
+                    self._omit_reasoning_effort.add(name)
                     switched = True
                     continue
             ms = int((time.monotonic() - t0) * 1000)
@@ -410,6 +428,7 @@ class OpenAIClient:
         max_tokens: int | None = 700,
         fallback: str | list[str] | None = None,
         task: str = "image_vision",
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         """Один vision-вызов: несколько JPEG ≤512px + текстовый промпт. Возвращает JSON."""
         if not images:
@@ -438,6 +457,7 @@ class OpenAIClient:
             max_tokens=max_tokens,
             fallback=fallback,
             task=task or "image_vision",
+            reasoning_effort=reasoning_effort,
             vision_images_n=len(img_list),
             vision_image_bytes=sum(len(x) for x in img_list),
         )
@@ -451,6 +471,7 @@ class OpenAIClient:
         temperature: float | None = None,
         fallback: str | list[str] | None = None,
         task: str = "chat",
+        reasoning_effort: str | None = None,
         vision_images_n: int = 0,
         vision_image_bytes: int = 0,
     ) -> dict[str, Any]:
@@ -462,6 +483,7 @@ class OpenAIClient:
             temperature=temperature,
             fallback=fallback,
             task=task,
+            reasoning_effort=reasoning_effort,
             vision_images_n=vision_images_n,
             vision_image_bytes=vision_image_bytes,
         )

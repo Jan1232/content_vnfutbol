@@ -130,12 +130,13 @@ class SoccerblogGateTests(unittest.TestCase):
             patch("editorial.tg_donor.is_text_seen", return_value=False),
             patch("editorial.tg_donor.get_last_seen_id", return_value=0),
             patch(
-                "editorial.soccerblog_gate.soccerblog_gate",
+                "editorial.soccerblog_gate.donor_gate",
                 return_value={
-                    "kind": "news",
+                    "kind": "template",
                     "confidence": 0.75,
                     "reason": "интервью",
                     "text_lang": "ru",
+                    "gate_version": 2,
                 },
             ),
         ):

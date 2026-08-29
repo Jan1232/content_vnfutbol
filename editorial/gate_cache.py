@@ -1,4 +1,4 @@
-"""Persistent cache for soccerblog_gate verdicts (meme/news/reject)."""
+"""Persistent cache for donor gate verdicts (as_is/template/reject)."""
 
 from __future__ import annotations
 
@@ -7,9 +7,34 @@ from typing import Any
 
 from app.db import db, init_db
 
+from editorial.soccerblog_gate import GATE_VERSION
+
+CACHE_KIND_VERSION = GATE_VERSION
+
 
 def _cache_key(feed_name: str, post_external_id: str) -> str:
     return f"{feed_name}:{post_external_id}"
+
+
+def _is_poisoned_verdict(data: dict[str, Any]) -> bool:
+    if not isinstance(data, dict):
+        return True
+    if data.get("gate_failed"):
+        return True
+    reason = str(data.get("reason") or "").strip()
+    if "gate error" in reason.lower():
+        return True
+    ver = int(data.get("gate_version") or 0)
+    if ver < CACHE_KIND_VERSION:
+        return True
+    kind = str(data.get("kind") or "").lower()
+    if kind in {"meme", "news"}:
+        return True
+    try:
+        conf = float(data.get("confidence") or 0)
+    except (TypeError, ValueError):
+        conf = 0.0
+    return kind == "as_is" and conf == 0.0 and not reason
 
 
 def get_gate_verdict(feed_name: str, post_external_id: str) -> dict[str, Any] | None:
@@ -26,10 +51,14 @@ def get_gate_verdict(feed_name: str, post_external_id: str) -> dict[str, Any] | 
         data = json.loads(row["verdict_json"] or "{}")
     except Exception:
         return None
-    return data if isinstance(data, dict) else None
+    if not isinstance(data, dict) or _is_poisoned_verdict(data):
+        return None
+    return data
 
 
 def put_gate_verdict(feed_name: str, post_external_id: str, verdict: dict[str, Any]) -> None:
+    if _is_poisoned_verdict(verdict):
+        return
     init_db()
     key = _cache_key(feed_name, post_external_id)
     payload = {k: v for k, v in verdict.items() if not str(k).startswith("_")}

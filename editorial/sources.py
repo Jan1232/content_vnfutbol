@@ -156,18 +156,25 @@ def _classify_tg_post(
     verdict: dict[str, Any] | None,
 ) -> tuple[str, str] | None:
     """Возвращает (post_kind, media_type) или None — пропустить."""
-    kind = str((verdict or {}).get("kind") or "").lower()
+    from editorial.soccerblog_gate import effective_gate_kind
+
+    if verdict and verdict.get("gate_failed"):
+        mt = "video" if has_video else ("image" if has_image else "")
+        return "news", mt
+
+    gk = effective_gate_kind(verdict)
+    if gk == "reject":
+        return None
+
     if has_video and "video" in take:
-        if kind == "reject":
-            return None
         return "video", "video"
+
     if has_image and not has_video:
-        if kind == "reject":
-            return None
-        if kind == "meme" and "meme_image" in take:
+        if gk == "as_is" and "meme_image" in take:
             return "meme", "image"
-        if kind in {"meme", "news"} and "meme_image" in take:
-            return ("meme" if kind == "meme" else "news"), "image"
+        if gk == "template" and "meme_image" in take:
+            return "news", "image"
+
     body = (text or "").strip()
     if len(body) < 12:
         return None
@@ -175,7 +182,11 @@ def _classify_tg_post(
         return "roundup", "image" if has_image else ""
     if _looks_quote(body) and "quote" in take:
         return "quote", "image" if has_image else ""
-    if "news" in take and kind != "reject":
+    if gk == "template" and "news" in take:
+        return "news", "image" if has_image else ""
+    if gk == "as_is" and "meme_image" in take:
+        return "meme", "image" if has_image else ""
+    if gk == "template" and "meme_image" in take:
         return "news", "image" if has_image else ""
     return None
 
@@ -191,7 +202,7 @@ def parse_telegram_feed(
     from app.config import get_settings
     from parsers.telegram import parse_telegram
     from editorial.gate_cache import get_gate_verdict, put_gate_verdict
-    from editorial.soccerblog_gate import soccerblog_gate
+    from editorial.soccerblog_gate import donor_gate
     from editorial.topic_gate import classify_event_rules
     from editorial.tg_donor import (
         get_last_seen_id,
@@ -248,10 +259,10 @@ def parse_telegram_feed(
             verdict = get_gate_verdict(feed.name, post.external_id)
             if verdict is None:
                 media_type_hint = "video" if has_video else "image"
-                verdict = soccerblog_gate(f"{title}\n{body}", media, media_type=media_type_hint)
+                verdict = donor_gate(f"{title}\n{body}", media, media_type=media_type_hint)
                 put_gate_verdict(feed.name, post.external_id, verdict)
         elif body:
-            verdict = {"kind": "news", "confidence": 0.5, "reason": "text-only"}
+            verdict = {"kind": "template", "confidence": 0.5, "reason": "text-only", "gate_version": 2}
         classified = _classify_tg_post(
             body,
             take=take,
@@ -271,7 +282,8 @@ def parse_telegram_feed(
         entities["tg_donor"] = feed.name
         entities["story_key"] = entities.get("story_key") or ""
         if verdict:
-            entities["soccerblog_gate"] = verdict
+            entities["donor_gate"] = verdict
+            entities["soccerblog_gate"] = verdict  # legacy key для notify/moderation
         if post_kind in {"meme", "video"}:
             entities["meme_source"] = feed.name
         if feed.rewrite_text:

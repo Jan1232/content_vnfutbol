@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     editorial_classify_fallback: str = "gpt-5.6-luna"
     editorial_reasoning_model: str = "gpt-5.6-terra"
     editorial_reasoning_fallback: str = "gpt-5.6-luna"
+    editorial_reasoning_effort: str = "low"
     editorial_search_model: str = "gpt-5-search-api"
     editorial_image_model: str = "gpt-image-1-mini"
     editorial_image_gen_fallback: bool = False
@@ -133,6 +134,8 @@ class Settings(BaseSettings):
     soccerblog_auto_publish: bool = False  # true = уверенные мемы в канал без TG-модерации
     soccerblog_auto_confidence: float = 0.8
     soccerblog_gate_model: str = ""
+    donor_gate_default: str = "template"
+    ad_reject_strict: bool = True
     editorial_cost_benchmark: bool = False
     editorial_live_test: bool = False
     editorial_test_date: str = ""

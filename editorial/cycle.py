@@ -292,6 +292,23 @@ def _advance_unlocked(
 
 def _step_topic(channel: EditorialChannelConfig, row: dict[str, Any]) -> str:
     news_id = int(row["id"])
+    try:
+        entities = json.loads(row.get("entities_json") or "{}")
+    except Exception:
+        entities = {}
+    gate = entities.get("donor_gate") or entities.get("soccerblog_gate")
+    if isinstance(gate, dict) and gate.get("gate_failed"):
+        item = _as_news_item(row)
+        cluster_id = item.cluster_id or cluster_id_for(item)
+        update_news(
+            news_id,
+            status="held",
+            topic_status="football",
+            event_type=row.get("event_type") or "other",
+            cluster_id=cluster_id,
+            last_error=str(gate.get("reason") or "gate не отработал")[:800],
+        )
+        return "held"
     if int(row.get("meme_source") or 0):
         item = _as_news_item(row)
         cluster_id = item.cluster_id or cluster_id_for(item)
