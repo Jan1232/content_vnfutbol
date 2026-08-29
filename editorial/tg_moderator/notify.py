@@ -53,11 +53,6 @@ def format_caption(item: dict[str, Any], channel: EditorialChannelConfig) -> str
     from editorial.soccerblog_gate import gate_verdict_of_row
 
     gate = gate_verdict_of_row(item)
-    if gate:
-        lines.append(
-            f"<b>LLM gate:</b> {_esc(str(gate.get('kind') or '—'))} "
-            f"conf={gate.get('confidence', '—')} — {_esc(str(gate.get('reason') or '')[:200])}"
-        )
 
     et = str(item.get("event_type") or "—")
     if et == "fixture_result":
@@ -75,6 +70,11 @@ def format_caption(item: dict[str, Any], channel: EditorialChannelConfig) -> str
         f"<b>#{item.get('id')} · {channel.slug}</b>",
         f"{_esc(event_type_label(et))} · {_esc(item.get('source') or '—')}",
     ]
+    if gate:
+        lines.append(
+            f"<b>LLM gate:</b> {_esc(str(gate.get('kind') or '—'))} "
+            f"conf={gate.get('confidence', '—')} — {_esc(str(gate.get('reason') or '')[:200])}"
+        )
     if meme:
         lines.extend(["", "<i>Мем / GIF — текст как в источнике, без редактуры.</i>"])
     elif headline:

@@ -119,9 +119,12 @@ class MemeMediaSelectTests(unittest.TestCase):
             media=[{"type": "image", "url": "https://example.com/i.jpg"}],
         )
         with (
-            patch("app.config.get_settings", return_value=MagicMock(meme_source_enabled=True)),
+            patch("app.config.get_settings", return_value=MagicMock(meme_source_enabled=True, tg_incremental=False)),
             patch("parsers.telegram.parse_telegram", return_value=("ch", [post])),
             patch("editorial.sources._extract_entities", return_value={}),
+            patch("editorial.gate_cache.get_gate_verdict", return_value=None),
+            patch("editorial.gate_cache.put_gate_verdict"),
+            patch("editorial.tg_donor.is_text_seen", return_value=False),
             patch(
                 "editorial.soccerblog_gate.soccerblog_gate",
                 return_value={

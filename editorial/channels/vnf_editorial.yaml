@@ -1,6 +1,4 @@
-# Editorial-канал: собственный футбольный контент.
-# Прод канала https://max.ru/channel_vnfutbol пока идёт автопостингом из t.me/jivifootbol.
-# dry_run: карточки не уходят в MAX, лента появляется в админке → Источники.
+# Editorial round-9: 4 TG-донора, рерайт без фактчека
 
 slug: vnf_editorial
 chat_id: -75796650734896
@@ -9,52 +7,52 @@ dry_run: false
 moderate_before_publish: true
 
 feeds:
-  - name: championat_football
-    kind: rss
-    url: "https://www.championat.com/rss/news/football/"
-  - name: sportsru_football
-    kind: rss
-    url: "https://www.sports.ru/rss/rubric.xml?id=208"
-  - name: bbc_football
-    kind: rss
-    url: "https://feeds.bbci.co.uk/sport/football/rss.xml"
-  - name: guardian_football
-    kind: rss
-    url: "https://www.theguardian.com/football/rss"
-  - name: yt_bot_topics
-    kind: yt_bot
-    endpoint: "/var/max-repost/data/editorial/inbox/yt_bot_topics.json"
-  - name: soccerblog_memes
+  - name: futbol1
+    kind: telegram
+    handle: futbol1
+    take_only: [news, quote, roundup, video, meme_image]
+    rewrite_text: true
+    preserve_quotes: true
+    profanity_mode: soften
+    max_per_day: 8
+  - name: soccerblog
     kind: telegram
     handle: thesoccerblogteam
-    take_only: [video, meme_image]
+    take_only: [news, quote, roundup, video, meme_image]
     rewrite_text: true
-    profanity_gate: strict
-    max_per_day: 5
+    preserve_quotes: true
+    profanity_mode: soften
+    max_per_day: 8
     wrap_template: false
-    # Новый мем-канал — только YAML (handle + take_only + max_per_day), код не трогать:
-    # - name: <name>
-    #   kind: telegram
-    #   handle: <handle>
-    #   take_only: [video, meme_image]
-    #   rewrite_text: true
-    #   profanity_gate: strict
-    #   max_per_day: 5
+  - name: championsleague365
+    kind: telegram
+    handle: championsleague365
+    take_only: [news, quote, roundup, video, meme_image]
+    rewrite_text: true
+    preserve_quotes: true
+    profanity_mode: soften
+    max_per_day: 8
+  - name: zhfootball
+    kind: telegram
+    handle: zhfootballll
+    take_only: [news, quote, roundup, video, meme_image]
+    rewrite_text: true
+    preserve_quotes: true
+    profanity_mode: soften
+    max_per_day: 8
 
 competitions: [PL, PD, SA, CL, EL, RPL, BL, FL1, WC, EC, UNL, NT]
-event_types: [transfer, injury, match_result, official_statement, lineup, lifestyle, meme]
+event_types: [transfer, injury, match_result, official_statement, lineup, lifestyle, meme, other]
 allow_rumors: false
-factcheck_min_sources: 2
-# Юридический флаг: внешние фото из поисковой выдачи. Без true пост уходит в held.
+factcheck_min_sources: 1
 image_rights_ack: true
 
 moderation:
   queue_depth: 3
-  # auto_publish_types: [matchday, fixture_result]  # опционально, по умолчанию всё через бот
 
 cadence:
-  min_gap_min: 40
-  max_gap_min: 55
+  min_gap_min: 30
+  max_gap_min: 45
   priority_bypass: true
   item_ttl_sec: 10800
 
@@ -68,7 +66,7 @@ template_map:
   official_statement: default
   lineup: default
   lifestyle: default
-  # meme: без шаблона — готовое медиа (видео/картинка)
+  roundup: roundup
 
 brand:
   name: "ВСЕ НА ФУТБОЛ"
@@ -76,7 +74,6 @@ brand:
   accent_color: "#E11D2A"
   cover_handle: "@channel_vnfutbol"
 
-# Зеркало в Telegram после одобрения (тот же контент, что в MAX)
 telegram_mirror:
   enabled: true
   channel: "@vnfutbol"

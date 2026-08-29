@@ -154,8 +154,20 @@ class SoccerBlogClassifyTests(unittest.TestCase):
         with (
             unittest.mock.patch("app.config.get_settings") as gs,
             unittest.mock.patch("parsers.telegram.parse_telegram", return_value=("t", posts)),
+            unittest.mock.patch("editorial.gate_cache.get_gate_verdict", return_value=None),
+            unittest.mock.patch("editorial.gate_cache.put_gate_verdict"),
+            unittest.mock.patch("editorial.tg_donor.is_text_seen", return_value=False),
+            unittest.mock.patch("editorial.tg_donor.get_last_seen_id", return_value=0),
+            unittest.mock.patch(
+                "editorial.soccerblog_gate.soccerblog_gate",
+                side_effect=[
+                    {"kind": "reject", "confidence": 0.95, "reason": "transfer"},
+                    {"kind": "reject", "confidence": 0.95, "reason": "lineup"},
+                    {"kind": "meme", "confidence": 0.9, "reason": "lifestyle", "text_lang": "ru"},
+                ],
+            ),
         ):
-            gs.return_value = unittest.mock.MagicMock(meme_source_enabled=True)
+            gs.return_value = unittest.mock.MagicMock(meme_source_enabled=True, tg_incremental=False)
             items = parse_telegram_meme_feed(feed)
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0].event_type, "lifestyle")

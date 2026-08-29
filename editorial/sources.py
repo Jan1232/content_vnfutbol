@@ -105,12 +105,101 @@ def parse_rss_feed(feed: EditorialFeed) -> list[NewsItem]:
     return items
 
 
-def parse_telegram_meme_feed(feed: EditorialFeed) -> list[NewsItem]:
-    """TG-мем-источник: мультимодальный soccerblog_gate → meme/news/reject."""
+def _tg_post_num(external_id: str) -> int:
+    try:
+        return int(str(external_id).rsplit("/", 1)[-1].split(":")[-1])
+    except ValueError:
+        return 0
+
+
+def _since_num(since_id: str) -> int:
+    if not since_id:
+        return 0
+    return _tg_post_num(since_id)
+
+
+def bootstrap_telegram_feed_cursor(feed: EditorialFeed) -> str:
+    """Последний пост в TG-ленте без вызова soccerblog_gate (bootstrap)."""
+    from parsers.telegram import parse_telegram
+
+    handle = (feed.handle or "").strip().lstrip("@")
+    if not handle:
+        return ""
+    _title, posts = parse_telegram(f"https://t.me/s/{handle}")
+    if not posts:
+        return ""
+    latest = max(posts, key=lambda p: _tg_post_num(p.external_id))
+    return _stable_id(feed.name, latest.external_id)
+
+
+_SCORE_PAIR = re.compile(r"\b\d{1,2}\s*[:\-–]\s*\d{1,2}\b")
+
+
+def _looks_roundup(text: str) -> bool:
+    blob = (text or "").lower()
+    if len(_SCORE_PAIR.findall(text or "")) >= 2:
+        return True
+    return any(x in blob for x in ("сводк", "итоги тура", "результаты тура", "roundup"))
+
+
+def _looks_quote(text: str) -> bool:
+    t = text or ""
+    return t.count("«") >= 1 and t.count("»") >= 1
+
+
+def _classify_tg_post(
+    text: str,
+    *,
+    take: set[str],
+    has_video: bool,
+    has_image: bool,
+    verdict: dict[str, Any] | None,
+) -> tuple[str, str] | None:
+    """Возвращает (post_kind, media_type) или None — пропустить."""
+    kind = str((verdict or {}).get("kind") or "").lower()
+    if has_video and "video" in take:
+        if kind == "reject":
+            return None
+        return "video", "video"
+    if has_image and not has_video:
+        if kind == "reject":
+            return None
+        if kind == "meme" and "meme_image" in take:
+            return "meme", "image"
+        if kind in {"meme", "news"} and "meme_image" in take:
+            return ("meme" if kind == "meme" else "news"), "image"
+    body = (text or "").strip()
+    if len(body) < 12:
+        return None
+    if _looks_roundup(body) and "roundup" in take:
+        return "roundup", "image" if has_image else ""
+    if _looks_quote(body) and "quote" in take:
+        return "quote", "image" if has_image else ""
+    if "news" in take and kind != "reject":
+        return "news", "image" if has_image else ""
+    return None
+
+
+def parse_telegram_feed(
+    feed: EditorialFeed,
+    *,
+    since_id: str = "",
+    cursor_out: list[str] | None = None,
+    replay: bool = False,
+) -> list[NewsItem]:
+    """TG-донор: инкрементальный fetch, gate только на новых постах."""
     from app.config import get_settings
     from parsers.telegram import parse_telegram
+    from editorial.gate_cache import get_gate_verdict, put_gate_verdict
     from editorial.soccerblog_gate import soccerblog_gate
     from editorial.topic_gate import classify_event_rules
+    from editorial.tg_donor import (
+        get_last_seen_id,
+        is_text_seen,
+        mark_text_seen,
+        set_last_seen_id,
+        text_hash,
+    )
 
     handle = (feed.handle or "").strip().lstrip("@")
     if not handle:
@@ -120,75 +209,166 @@ def parse_telegram_meme_feed(feed: EditorialFeed) -> list[NewsItem]:
         return []
     url = f"https://t.me/s/{handle}"
     _title, posts = parse_telegram(url)
-    take = {str(x).lower() for x in (feed.take_only or ("video", "meme_image"))}
+    take = {str(x).lower() for x in (feed.take_only or ("video", "meme_image", "news"))}
     out: list[NewsItem] = []
+    incremental = bool(getattr(settings, "tg_incremental", True)) and not replay
+    since_num = _since_num(since_id)
+    if incremental:
+        since_num = max(since_num, get_last_seen_id(handle))
+    latest_num = 0
+    latest_ext = ""
+    max_processed = since_num
 
-    for post in posts[-40:]:
+    for post in posts:
+        post_num = _tg_post_num(post.external_id)
+        if post_num > latest_num:
+            latest_num = post_num
+            latest_ext = post.external_id
+
+    if cursor_out is not None and latest_ext and not replay:
+        cursor_out.append(_stable_id(feed.name, latest_ext))
+
+    for post in posts:
+        post_num = _tg_post_num(post.external_id)
+        if incremental and since_num > 0 and post_num <= since_num:
+            continue
+        if incremental:
+            max_processed = max(max_processed, post_num)
+        title = (post.text or post.title or feed.name or "post").strip()[:200] or "post"
+        body = (post.text or "").strip()
+        digest = text_hash(f"{title}\n{body}")
+        if incremental and is_text_seen(handle, digest):
+            continue
         media = post.media or []
         has_video = any((m.get("type") or "") == "video" for m in media)
         has_image = any((m.get("type") or "") == "image" and m.get("url") for m in media)
-        if "video" in take and has_video:
-            media_type = "video"
-            post_kind = "video"
-        elif "meme_image" in take and has_image and not has_video:
-            media_type = "image"
-            post_kind = "meme"
-        else:
+        needs_gate = has_video or has_image
+        verdict: dict[str, Any] | None = None
+        if needs_gate:
+            verdict = get_gate_verdict(feed.name, post.external_id)
+            if verdict is None:
+                media_type_hint = "video" if has_video else "image"
+                verdict = soccerblog_gate(f"{title}\n{body}", media, media_type=media_type_hint)
+                put_gate_verdict(feed.name, post.external_id, verdict)
+        elif body:
+            verdict = {"kind": "news", "confidence": 0.5, "reason": "text-only"}
+        classified = _classify_tg_post(
+            body,
+            take=take,
+            has_video=has_video,
+            has_image=has_image,
+            verdict=verdict,
+        )
+        if incremental:
+            mark_text_seen(handle, digest, post_id=post_num)
+        if not classified:
             continue
-        title = (post.text or post.title or feed.name or "meme").strip()[:200] or "meme"
-        body = (post.text or "").strip()
-        verdict = soccerblog_gate(f"{title}\n{body}", media, media_type=media_type)
-        kind = str(verdict.get("kind") or "reject")
-        if kind == "reject":
-            continue
+        post_kind, media_type = classified
+        published = post.published_at or datetime.now(timezone.utc)
+        if published.tzinfo is None:
+            published = published.replace(tzinfo=timezone.utc)
         entities = _extract_entities(title, body)
-        entities["soccerblog_gate"] = verdict
-        entities["soccerblog_source"] = feed.name
-        if kind == "meme":
+        entities["tg_donor"] = feed.name
+        entities["story_key"] = entities.get("story_key") or ""
+        if verdict:
+            entities["soccerblog_gate"] = verdict
+        if post_kind in {"meme", "video"}:
             entities["meme_source"] = feed.name
+        if feed.rewrite_text:
+            entities["rewrite_text"] = True
+        if feed.preserve_quotes:
+            entities["preserve_quotes"] = True
+        prof_mode = (feed.profanity_mode or feed.profanity_gate or "").strip()
+        if prof_mode:
+            entities["profanity_mode"] = prof_mode
+        entities["tg_post_type"] = post_kind
+        if post_kind == "meme":
             event_type = "lifestyle"
             meme_flag = True
-        else:
-            event_type = classify_event_rules(f"{title}\n{body}") or "lifestyle"
-            if event_type in {"transfer", "injury", "match_result", "lineup", "official_statement"}:
-                event_type = "lifestyle"
+        elif post_kind == "roundup":
+            event_type = "match_result"
             meme_flag = False
+        elif post_kind == "quote":
+            event_type = classify_event_rules(f"{title}\n{body}") or "official_statement"
+            meme_flag = False
+        else:
+            event_type = classify_event_rules(f"{title}\n{body}") or "other"
+            if event_type in {"lifestyle", "meme"} and post_kind == "news":
+                event_type = "other"
+            meme_flag = False
+        from editorial.story_throttle import story_key as _story_key
+
+        entities["story_key"] = _story_key(
+            NewsItem(
+                external_id=_stable_id(feed.name, post.external_id),
+                source=feed.name,
+                url=post.source_url or url,
+                title=title,
+                body=body,
+                lang="ru",
+                published_at=published,
+                entities=entities,
+                event_type=event_type,
+            )
+        )
         item = NewsItem(
             external_id=_stable_id(feed.name, post.external_id),
             source=feed.name,
             url=post.source_url or url,
             title=title,
             body=body,
-            lang=str(verdict.get("text_lang") or "ru")[:8] or "ru",
-            published_at=datetime.now(timezone.utc),
+            lang=str((verdict or {}).get("text_lang") or "ru")[:8] or "ru",
+            published_at=published,
             entities=entities,
             raw={
                 "media": media,
                 "post_kind": post_kind,
                 "media_type": media_type,
                 "wrap_template": bool(getattr(feed, "wrap_template", False)),
-                "soccerblog_kind": kind,
+                "soccerblog_kind": str((verdict or {}).get("kind") or post_kind),
+                "tg_post_type": post_kind,
             },
             event_type=event_type,
-            competition="",
+            competition=str(entities.get("competition") or detect_competition(f"{title}\n{body}")),
         )
         if meme_flag:
             entities["wrap_template"] = bool(getattr(feed, "wrap_template", False))
             entities["meme_text_class"] = "lifestyle"
         out.append(item)
+
+    if incremental and max_processed > since_num:
+        set_last_seen_id(handle, max_processed)
     return out
+
+
+def parse_telegram_meme_feed(
+    feed: EditorialFeed,
+    *,
+    since_id: str = "",
+    cursor_out: list[str] | None = None,
+) -> list[NewsItem]:
+    """Обратная совместимость: делегирует в parse_telegram_feed."""
+    return parse_telegram_feed(feed, since_id=since_id, cursor_out=cursor_out)
 
 
 # Точка расширения: позже vk / instagram_export / rss_meme без переписывания fetch_feed.
 MEME_SOURCE_PARSERS: dict[str, Any] = {
-    "telegram": parse_telegram_meme_feed,
+    "telegram": parse_telegram_feed,
 }
 
 
-def fetch_feed(feed: EditorialFeed) -> list[NewsItem]:
+def fetch_feed(
+    feed: EditorialFeed,
+    *,
+    tg_since_id: str = "",
+    tg_cursor_out: list[str] | None = None,
+    replay: bool = False,
+) -> list[NewsItem]:
     kind = (feed.kind or "rss").lower()
     parser = MEME_SOURCE_PARSERS.get(kind)
     if parser is not None:
+        if kind == "telegram":
+            return parser(feed, since_id=tg_since_id, cursor_out=tg_cursor_out, replay=replay)
         return parser(feed)
     if kind in {"rss", "atom"}:
         return parse_rss_feed(feed)

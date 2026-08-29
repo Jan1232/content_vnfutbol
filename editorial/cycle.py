@@ -127,6 +127,31 @@ def ingest_channel(channel: EditorialChannelConfig) -> int:
             # still ingest "other" to let LLM classify later
             pass
         enrich_news_item(item, fetch_article=False)
+        from editorial.cross_donor import cross_donor_duplicate
+
+        dup, dup_reason = cross_donor_duplicate(channel.slug, item)
+        if dup:
+            insert_news(
+                {
+                    "channel_slug": channel.slug,
+                    "external_id": item.external_id,
+                    "cluster_id": item.cluster_id or cluster_id_for(item),
+                    "source": item.source,
+                    "url": item.url,
+                    "event_type": item.event_type,
+                    "competition": item.competition,
+                    "is_national": 1 if item.entities.get("is_national") else 0,
+                    "teams_json": _teams_json(item),
+                    "title": item.title,
+                    "body": item.body,
+                    "lang": item.lang,
+                    "source_published_at": item.published_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    "entities_json": _entities_json(item),
+                    "status": "filtered",
+                    "last_error": dup_reason[:800],
+                }
+            )
+            continue
         nid = insert_news(
             {
                 "channel_slug": channel.slug,
@@ -312,6 +337,39 @@ def _step_topic(channel: EditorialChannelConfig, row: dict[str, Any]) -> str:
     item.event_type = event_type
     cluster_id = item.cluster_id or cluster_id_for(item)
     item.cluster_id = cluster_id
+    entities = dict(item.entities or {})
+    if entities.get("tg_donor"):
+        entities["pick"] = {
+            "take": True,
+            "tag": "tg_donor",
+            "reason": "tg donor — без pick-фильтра",
+            "by": "tg_donor",
+        }
+        entities_json = json.dumps(entities, ensure_ascii=False)
+        ok_story, story_reason = story_throttle_ok(channel.slug, item)
+        if not ok_story:
+            entities["story"] = {"reason": story_reason[:400]}
+            entities_json = json.dumps(entities, ensure_ascii=False)
+            update_news(
+                news_id,
+                status="deferred",
+                topic_status="football",
+                event_type=event_type,
+                cluster_id=cluster_id,
+                entities_json=entities_json,
+                last_error=(f"story: {story_reason}")[:800],
+            )
+            return "deferred"
+        update_news(
+            news_id,
+            status="verifying",
+            topic_status="football",
+            event_type=event_type,
+            cluster_id=cluster_id,
+            entities_json=entities_json,
+            last_error="",
+        )
+        return "verifying"
     already = cluster_published(cluster_id, str(channel.chat_id))
     hf_ratio = human_factor_share(recent_published(channel.slug, limit=HUMAN_FACTOR_WINDOW))
     verdict = editorial_pick(
@@ -459,22 +517,26 @@ def _step_edit(row: dict[str, Any]) -> str:
         result = rewrite_item(row, facts=facts_from_item(row))
         post_text = result["post_text"]
         settings = get_settings()
-        if str(getattr(settings, "profanity_filter", "") or "").lower() == "strict":
-            from editorial.profanity import profanity_ok, replace_profanity
+        try:
+            entities = json.loads(row.get("entities_json") or "{}")
+        except Exception:
+            entities = {}
+        prof_mode = str(entities.get("profanity_mode") or "").strip()
+        from editorial.profanity import apply_profanity, effective_profanity_mode, profanity_ok
 
-            cleaned = replace_profanity(post_text)
-            ok, why = profanity_ok(cleaned)
-            if not ok:
-                update_news(
-                    news_id,
-                    status="held",
-                    post_text=post_text,
-                    headline=result["headline"],
-                    emoji_lead=result["emoji_lead"],
-                    last_error=f"profanity: {why}",
-                )
-                return "held"
-            post_text = cleaned
+        mode = effective_profanity_mode(feed_mode=prof_mode)
+        post_text = apply_profanity(post_text, mode=mode)
+        ok, why = profanity_ok(post_text, mode=mode)
+        if not ok:
+            update_news(
+                news_id,
+                status="held",
+                post_text=post_text,
+                headline=result["headline"],
+                emoji_lead=result["emoji_lead"],
+                last_error=f"profanity: {why}",
+            )
+            return "held"
     media_type = str(row.get("media_type") or "")
     if media_type == "video":
         update_news(
@@ -524,6 +586,12 @@ def _step_image(channel: EditorialChannelConfig, row: dict[str, Any]) -> str:
         )
         return "held"
     template = channel.template_for(row.get("event_type") or "other")
+    try:
+        entities = json.loads(row.get("entities_json") or "{}")
+    except Exception:
+        entities = {}
+    if str(entities.get("tg_post_type") or "") == "roundup":
+        template = "roundup"
     path = find_photo(row, template_name=template)
     if not path:
         update_news(news_id, status="held", last_error="нет релевантного фото")
@@ -561,7 +629,12 @@ def _step_caption(row: dict[str, Any]) -> str:
 
 def _step_render(channel: EditorialChannelConfig, row: dict[str, Any]) -> str:
     news_id = int(row["id"])
-    template = channel.template_for(row.get("event_type") or "other")
+    try:
+        entities = json.loads(row.get("entities_json") or "{}")
+    except Exception:
+        entities = {}
+    tg_type = str(entities.get("tg_post_type") or (row.get("raw") or {}).get("tg_post_type") or "")
+    template = "roundup" if tg_type == "roundup" else channel.template_for(row.get("event_type") or "other")
     badge = BADGE_FOR_EVENT.get(row.get("event_type") or "", "НОВОСТЬ")
     image_path = ensure_template_crop(row.get("image_path") or "", template_name=template)
     if image_path != (row.get("image_path") or ""):

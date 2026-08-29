@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
+from pathlib import Path
 from typing import Iterable
+
+import yaml
+
+from app.config import ROOT, get_settings
 
 _RU_ROOTS: tuple[str, ...] = (
     "хуй",
@@ -85,6 +91,45 @@ _WS = re.compile(r"[ \t]{2,}")
 _SPACE_PUNCT = re.compile(r"\s+([,.!?;:])")
 
 
+def effective_profanity_mode(*, feed_mode: str = "") -> str:
+    fm = (feed_mode or "").strip().lower()
+    if fm in {"soften", "strict"}:
+        return fm
+    settings = get_settings()
+    mode = (getattr(settings, "profanity_mode", None) or "").strip().lower()
+    if mode in {"soften", "strict"}:
+        return mode
+    legacy = str(getattr(settings, "profanity_filter", "") or "strict").strip().lower()
+    return legacy if legacy in {"soften", "strict"} else "strict"
+
+
+@lru_cache
+def _soften_rules() -> tuple[tuple[re.Pattern[str], str], ...]:
+    settings = get_settings()
+    path = Path(getattr(settings, "profanity_map", None) or ROOT / "editorial" / "profanity_map.yaml")
+    if not path.is_file():
+        return ()
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return ()
+    rows = data.get("replacements") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return ()
+    out: list[tuple[re.Pattern[str], str]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        pat = str(row.get("pattern") or "").strip()
+        if not pat:
+            continue
+        try:
+            out.append((re.compile(pat), str(row.get("replace") or "")))
+        except re.error:
+            continue
+    return tuple(out)
+
+
 def replace_profanity(text: str) -> str:
     """Заменить мат на нейтральные слова; не переписывать смысл."""
     if not text:
@@ -96,6 +141,26 @@ def replace_profanity(text: str) -> str:
     out = _SPACE_PUNCT.sub(r"\1", out)
     out = _WS.sub(" ", out)
     return out.strip()
+
+
+def soften_profanity(text: str) -> str:
+    """Мат → грубые, но допустимые синонимы (режим soften)."""
+    if not text:
+        return ""
+    out = str(text)
+    for rx, repl in _soften_rules():
+        out = rx.sub(repl, out)
+    out = replace_profanity(out)
+    out = _SPACE_PUNCT.sub(r"\1", out)
+    out = _WS.sub(" ", out)
+    return out.strip()
+
+
+def apply_profanity(text: str, *, mode: str = "") -> str:
+    m = (mode or effective_profanity_mode()).lower()
+    if m == "soften":
+        return soften_profanity(text)
+    return replace_profanity(text)
 
 
 def contains_profanity(text: str) -> bool:
@@ -110,7 +175,10 @@ def strip_profanity(text: str) -> str:
     return replace_profanity(text)
 
 
-def profanity_ok(text: str) -> tuple[bool, str]:
+def profanity_ok(text: str, *, mode: str = "") -> tuple[bool, str]:
+    m = (mode or effective_profanity_mode()).lower()
+    if m == "soften":
+        return True, "ok"
     if contains_profanity(text or ""):
         return False, "profanity"
     return True, "ok"

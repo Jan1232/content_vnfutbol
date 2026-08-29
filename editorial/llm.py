@@ -227,6 +227,42 @@ def factcheck(item: dict[str, Any], snippets: list[dict[str, Any]]) -> dict[str,
     )
 
 
+_REWRITE_ROUNDUP_EXTRA = (
+    "\nТип поста: ROUNDUP (сводка тура).\n"
+    "Сохрани ВСЕ счета и пары команд из источника. Формат: список строк «Команда — Команда 2:1».\n"
+    "Один вводный абзац + список. Без лишней воды."
+)
+_REWRITE_QUOTE_EXTRA = (
+    "\nТип поста: QUOTE (цитата).\n"
+    "Цитаты в «ёлочках» — ДОСЛОВНО из источника (кроме мата: смягчи обсценную лексику).\n"
+    "Обрамление (контекст) — рерайт. Автор цитаты — через тире после «»."
+)
+_REWRITE_SOFTEN_EXTRA = (
+    "\nМат и обсценная лексика: замени на грубые, но допустимые слова (жесть, блин, дурак), не на ***."
+)
+
+
+def _rewrite_extra(item: dict[str, Any]) -> str:
+    try:
+        import json
+
+        entities = json.loads(item.get("entities_json") or "{}")
+    except Exception:
+        entities = item.get("entities") if isinstance(item.get("entities"), dict) else {}
+    if not isinstance(entities, dict):
+        entities = {}
+    bits: list[str] = []
+    tg_type = str(entities.get("tg_post_type") or "").lower()
+    if tg_type == "roundup":
+        bits.append(_REWRITE_ROUNDUP_EXTRA)
+    elif tg_type == "quote" or entities.get("preserve_quotes"):
+        bits.append(_REWRITE_QUOTE_EXTRA)
+    mode = str(entities.get("profanity_mode") or "").lower()
+    if mode == "soften":
+        bits.append(_REWRITE_SOFTEN_EXTRA)
+    return "\n".join(bits)
+
+
 def rewrite(item: dict[str, Any], facts: str = "") -> dict[str, Any]:
     from editorial.stickers import pool_for_prompt
 
@@ -234,8 +270,9 @@ def rewrite(item: dict[str, Any], facts: str = "") -> dict[str, Any]:
     user_extra = ""
     if pool_hint:
         user_extra = f"Дополнительный пул стикеров редакции (можно использовать): {pool_hint}.\n"
+    extra = _rewrite_extra(item)
     return chat_json(
-        _REWRITE_SYSTEM,
+        _REWRITE_SYSTEM + (extra or ""),
         (
             f"{user_extra}"
             f"Заголовок: {item.get('title')}\n"

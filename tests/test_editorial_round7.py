@@ -32,8 +32,24 @@ class SoccerblogGateTests(unittest.TestCase):
             "entities_json": '{"soccerblog_gate":{"kind":"meme","confidence":0.85}}'
         }
         with patch("editorial.soccerblog_gate.get_settings") as gs:
-            gs.return_value = MagicMock(soccerblog_gate_enabled=True, soccerblog_auto_confidence=0.8)
+            gs.return_value = MagicMock(
+                soccerblog_gate_enabled=True,
+                soccerblog_auto_publish=True,
+                soccerblog_auto_confidence=0.8,
+            )
             self.assertTrue(should_auto_publish(row))
+
+    def test_auto_publish_disabled_by_default(self):
+        row = {
+            "entities_json": '{"soccerblog_gate":{"kind":"meme","confidence":0.95}}'
+        }
+        with patch("editorial.soccerblog_gate.get_settings") as gs:
+            gs.return_value = MagicMock(
+                soccerblog_gate_enabled=True,
+                soccerblog_auto_publish=False,
+                soccerblog_auto_confidence=0.8,
+            )
+            self.assertFalse(should_auto_publish(row))
 
     def test_gate_vision_meme(self):
         with (
@@ -74,9 +90,13 @@ class SoccerblogGateTests(unittest.TestCase):
             media=[{"type": "image", "url": "https://example.com/i.jpg"}],
         )
         with (
-            patch("app.config.get_settings", return_value=MagicMock(meme_source_enabled=True)),
+            patch("app.config.get_settings", return_value=MagicMock(meme_source_enabled=True, tg_incremental=False)),
             patch("parsers.telegram.parse_telegram", return_value=("ch", [post])),
             patch("editorial.sources._extract_entities", return_value={}),
+            patch("editorial.gate_cache.get_gate_verdict", return_value=None),
+            patch("editorial.gate_cache.put_gate_verdict"),
+            patch("editorial.tg_donor.is_text_seen", return_value=False),
+            patch("editorial.tg_donor.get_last_seen_id", return_value=0),
             patch(
                 "editorial.soccerblog_gate.soccerblog_gate",
                 return_value={"kind": "reject", "confidence": 0.95, "reason": "lineup"},
@@ -102,9 +122,13 @@ class SoccerblogGateTests(unittest.TestCase):
             media=[{"type": "image", "url": "https://example.com/i.jpg"}],
         )
         with (
-            patch("app.config.get_settings", return_value=MagicMock(meme_source_enabled=True)),
+            patch("app.config.get_settings", return_value=MagicMock(meme_source_enabled=True, tg_incremental=False)),
             patch("parsers.telegram.parse_telegram", return_value=("ch", [post])),
             patch("editorial.sources._extract_entities", return_value={}),
+            patch("editorial.gate_cache.get_gate_verdict", return_value=None),
+            patch("editorial.gate_cache.put_gate_verdict"),
+            patch("editorial.tg_donor.is_text_seen", return_value=False),
+            patch("editorial.tg_donor.get_last_seen_id", return_value=0),
             patch(
                 "editorial.soccerblog_gate.soccerblog_gate",
                 return_value={
@@ -118,6 +142,7 @@ class SoccerblogGateTests(unittest.TestCase):
             items = parse_telegram_meme_feed(feed)
         self.assertEqual(len(items), 1)
         self.assertNotIn("meme_source", items[0].entities or {})
+        self.assertEqual(items[0].entities.get("tg_post_type"), "news")
 
 
 class StoryRelationHybridTests(unittest.TestCase):

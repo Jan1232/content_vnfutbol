@@ -375,6 +375,43 @@ def init_db() -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS tg_donor_cursor (
+              handle        TEXT PRIMARY KEY,
+              last_seen_id  INTEGER NOT NULL DEFAULT 0,
+              updated_at    TEXT DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tg_donor_text_seen (
+              handle     TEXT NOT NULL,
+              text_hash  TEXT NOT NULL,
+              post_id    INTEGER NOT NULL DEFAULT 0,
+              seen_at    TEXT DEFAULT (datetime('now')),
+              PRIMARY KEY (handle, text_hash)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS editorial_gate_cache (
+              cache_key         TEXT PRIMARY KEY,
+              feed_name         TEXT NOT NULL DEFAULT '',
+              post_external_id  TEXT NOT NULL DEFAULT '',
+              verdict_json      TEXT NOT NULL DEFAULT '{}',
+              updated_at        TEXT DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_gate_cache_feed
+            ON editorial_gate_cache(feed_name, post_external_id)
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS editorial_llm_call_log (
               id                INTEGER PRIMARY KEY,
               usage_id          INTEGER,

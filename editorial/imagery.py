@@ -1839,6 +1839,50 @@ def _download_named(url: str, news_id: Any) -> Path | None:
     return _download(url, dest)
 
 
+def check_photo_matches_headline(
+    cand: ImageCandidate,
+    item: dict[str, Any],
+) -> tuple[bool, float, str]:
+    """Vision: фото соответствует заголовку/смыслу поста?"""
+    settings = _imagery_settings()
+    if not bool(getattr(settings, "photo_headline_check", True)):
+        return True, 1.0, "disabled"
+    model = (getattr(settings, "editorial_vision_model", None) or "gpt-5.6-luna").strip()
+    headline = " ".join(
+        str(item.get(k) or "") for k in ("headline", "caption_line1", "title") if item.get(k)
+    ).strip()
+    post = str(item.get("post_text") or item.get("body") or "")[:600]
+    prompt = (
+        f"Заголовок карточки: {headline[:300]}\n"
+        f"Смысл поста: {post}\n"
+        "Фото должно соответствовать смыслу (не празднование при поражении и т.п.).\n"
+        'JSON: {"photo_matches_headline":true,"confidence":0.0,"reason":"..."}'
+    )
+    try:
+        from editorial.openai_client import get_client
+
+        data = get_client().vision(
+            model,
+            [preview_jpeg(cand.path)],
+            prompt,
+            json_mode=True,
+            max_tokens=300,
+            task="photo_headline_check",
+        )
+        if not isinstance(data, dict):
+            return True, 0.5, "bad json"
+        ok = bool(data.get("photo_matches_headline"))
+        try:
+            conf = float(data.get("confidence") or 0)
+        except (TypeError, ValueError):
+            conf = 0.5
+        reason = str(data.get("reason") or "")[:200]
+        return ok, conf, reason
+    except Exception as e:
+        print(f"[editorial] photo_headline_check fail: {e}", flush=True)
+        return True, 0.5, str(e)[:120]
+
+
 def find_photo(item: dict[str, Any], *, template_name: str = "default") -> str | None:
     """Кандидаты → quality → vision → smart-crop. Без годного — None (held)."""
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
@@ -1897,8 +1941,43 @@ def find_photo(item: dict[str, Any], *, template_name: str = "default") -> str |
             return None
 
         use_script_pick = bool(getattr(settings, "vision_single_candidate", True))
+        headline_check = bool(getattr(settings, "photo_headline_check", True))
+        max_swap = int(getattr(settings, "photo_autoswap_max", 2) or 2)
+        min_headline = float(getattr(settings, "photo_check_min", 0.6) or 0.6)
+        best: ImageCandidate | None = None
         if use_script_pick:
-            best = _pick_with_optional_vision(pool, item, trace=trace)
+            ordered = sorted(
+                pool,
+                key=lambda c: (_via_rank(c.via), -(c.width * c.height), -_sharpness_score(c.path)),
+            )
+            tried: set[str] = set()
+            for swap_i in range(max(1, max_swap + 1)):
+                pick = None
+                for cand in ordered:
+                    key = str(cand.path)
+                    if key in tried:
+                        continue
+                    tried.add(key)
+                    pick = verify_single_photo(cand, item, trace=trace) if cand.via != "article" else cand
+                    if pick:
+                        break
+                if not pick:
+                    break
+                if headline_check:
+                    ok_h, conf_h, _r = check_photo_matches_headline(pick, item)
+                    if ok_h and conf_h >= min_headline:
+                        best = pick
+                        break
+                    print(
+                        f"[editorial] headline check fail swap={swap_i} conf={conf_h:.2f}",
+                        flush=True,
+                    )
+                    if swap_i >= max_swap:
+                        trace["outcome"] = "held_headline"
+                        return None
+                    continue
+                best = pick
+                break
             if not best:
                 print("[editorial] no relevant image", flush=True)
                 trace["outcome"] = "held_vision"

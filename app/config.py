@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     editorial_freshness_sec: int = 900
     editorial_channels_dir: Path = ROOT / "editorial" / "channels"
     editorial_max_retry: int = 3
-    editorial_min_gap_min: int = 40
+    editorial_min_gap_min: int = 30
     editorial_max_gap_min: int = 55
     editorial_item_ttl_sec: int = 10800
     clubs_file: Path = ROOT / "editorial" / "clubs.yaml"
@@ -130,6 +130,7 @@ class Settings(BaseSettings):
     reasoning_escalate: float = 0.7
     # soccerblog multimodal gate (round-7)
     soccerblog_gate_enabled: bool = True
+    soccerblog_auto_publish: bool = False  # true = уверенные мемы в канал без TG-модерации
     soccerblog_auto_confidence: float = 0.8
     soccerblog_gate_model: str = ""
     editorial_cost_benchmark: bool = False
@@ -150,6 +151,15 @@ class Settings(BaseSettings):
     meme_wrap_template: bool = False
     entertainment_floor_ratio: float = 0.20
     profanity_filter: str = "strict"
+    profanity_mode: str = ""  # soften | strict; пусто = profanity_filter
+    profanity_map: Path = ROOT / "editorial" / "profanity_map.yaml"
+    # round-9 TG donors
+    editorial_rss_enabled: bool = False
+    tg_incremental: bool = True
+    cross_donor_window_min: int = 180
+    photo_headline_check: bool = True
+    photo_check_min: float = 0.6
+    photo_autoswap_max: int = 2
     moderation_queue_depth: int = 3
     video_max_mb: int = 250
     image_search_backend: str = "yandex"

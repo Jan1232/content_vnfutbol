@@ -19,6 +19,7 @@ _VIEWPORTS = {
     "breaking": (1080, 1080),
     "transfer": (1080, 1080),
     "default": (1080, 1080),
+    "roundup": (1080, 1080),
     "matchday": (1080, 1350),
     "result": (1080, 1080),
 }

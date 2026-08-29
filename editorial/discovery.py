@@ -8,7 +8,7 @@ from app.config import get_settings
 from app.db import db, get_meta, set_meta
 from editorial.channel_config import EditorialChannelConfig
 from editorial.models import NewsItem, utcnow
-from editorial.sources import DEFAULT_FEEDS, fetch_feed
+from editorial.sources import DEFAULT_FEEDS, bootstrap_telegram_feed_cursor, fetch_feed
 from editorial.topic_gate import classify_event_rules
 
 
@@ -28,17 +28,44 @@ def fetch_fresh_news(channel: EditorialChannelConfig) -> list[NewsItem]:
     out: list[NewsItem] = []
 
     for feed in feeds:
-        try:
-            items = fetch_feed(feed)
-        except Exception as e:
-            print(f"[editorial] feed {feed.name} fail: {e}", flush=True)
-            continue
-        if not items:
-            continue
-
         boot_key = _bootstrap_key(channel.slug, feed.name)
         with db() as conn:
             bootstrapped = bool(get_meta(conn, boot_key, ""))
+
+        feed_kind = (feed.kind or "").lower()
+        if not bool(getattr(settings, "editorial_rss_enabled", False)) and feed_kind in {"rss", "atom"}:
+            continue
+
+        is_tg = feed_kind == "telegram"
+        if not bootstrapped and is_tg:
+            latest_ext = bootstrap_telegram_feed_cursor(feed)
+            if latest_ext:
+                with db() as conn:
+                    set_meta(conn, boot_key, "1")
+                    set_meta(conn, _cursor_key(channel.slug, feed.name), latest_ext)
+            print(
+                f"[editorial] bootstrap {channel.slug}/{feed.name}: telegram cursor only",
+                flush=True,
+            )
+            continue
+
+        tg_since_id = ""
+        tg_cursor_out: list[str] | None = None
+        if is_tg:
+            with db() as conn:
+                tg_since_id = str(get_meta(conn, _cursor_key(channel.slug, feed.name), "") or "")
+            tg_cursor_out = []
+
+        try:
+            items = fetch_feed(feed, tg_since_id=tg_since_id, tg_cursor_out=tg_cursor_out)
+        except Exception as e:
+            print(f"[editorial] feed {feed.name} fail: {e}", flush=True)
+            continue
+        if tg_cursor_out:
+            with db() as conn:
+                set_meta(conn, _cursor_key(channel.slug, feed.name), tg_cursor_out[0])
+        if not items:
+            continue
 
         if not bootstrapped:
             latest = max(items, key=lambda i: i.published_at or datetime.min.replace(tzinfo=timezone.utc))
@@ -133,4 +160,35 @@ def fetch_news_for_date(channel: EditorialChannelConfig, date_str: str) -> list[
                     continue
             out.append(item)
     print(f"[editorial] fetch_news_for_date {date_str}: {len(out)} items", flush=True)
+    return out
+
+
+def fetch_replay_window(
+    channel: EditorialChannelConfig,
+    *,
+    hours: int = 24,
+) -> list[NewsItem]:
+    """Посты TG-доноров за последние N часов (боевой parse, replay=True)."""
+    cutoff = utcnow() - timedelta(hours=max(1, int(hours or 24)))
+    feeds = channel.feeds or DEFAULT_FEEDS
+    out: list[NewsItem] = []
+    for feed in feeds:
+        if (feed.kind or "").lower() != "telegram":
+            continue
+        try:
+            items = fetch_feed(feed, replay=True)
+        except Exception as e:
+            print(f"[editorial] replay feed {feed.name} fail: {e}", flush=True)
+            continue
+        for item in items:
+            published = item.published_at
+            if published.tzinfo is None:
+                published = published.replace(tzinfo=timezone.utc)
+            if published < cutoff:
+                continue
+            if not item.event_type or item.event_type == "other":
+                item.event_type = classify_event_rules(f"{item.title}\n{item.body}")
+            out.append(item)
+    out.sort(key=lambda i: i.published_at or datetime.min.replace(tzinfo=timezone.utc))
+    print(f"[editorial] fetch_replay_window {hours}h: {len(out)} items", flush=True)
     return out

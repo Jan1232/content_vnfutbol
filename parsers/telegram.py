@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -23,6 +24,23 @@ class ParsedPost:
     media: list[dict[str, Any]] = field(default_factory=list)
     source_url: str = ""
     title: str = ""
+    published_at: datetime | None = None
+
+
+def _parse_msg_time(msg) -> datetime | None:
+    el = msg.select_one("time[datetime]") or msg.select_one(".tgme_widget_message_date time")
+    if el is None:
+        return None
+    raw = (el.get("datetime") or "").strip()
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except ValueError:
+        return None
 
 
 def normalize_telegram_url(url: str) -> str | None:
@@ -247,6 +265,7 @@ def parse_telegram(url: str, since_id: str = "") -> tuple[str, list[ParsedPost]]
                     media=uniq,
                     source_url=f"https://t.me/{data_post}",
                     title=title,
+                    published_at=_parse_msg_time(msg),
                 )
             )
 

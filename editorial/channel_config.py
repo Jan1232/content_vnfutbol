@@ -22,6 +22,8 @@ class EditorialFeed:
     take_only: tuple[str, ...] = ()
     rewrite_text: bool = False
     profanity_gate: str = ""
+    profanity_mode: str = ""
+    preserve_quotes: bool = False
     max_per_day: int = 0  # 0 = fallback на глобальный meme_source_max_per_day
     wrap_template: bool = False
 
@@ -149,7 +151,7 @@ def _parse_feeds(raw: Any) -> tuple[EditorialFeed, ...]:
         name = str(item.get("name") or item.get("url") or item.get("endpoint") or kind)
         is_meme_tg = kind == "telegram"
         rewrite_default = True if is_meme_tg else False
-        profanity_default = "strict" if is_meme_tg else ""
+        profanity_default = "soften" if is_meme_tg else ""
         out.append(
             EditorialFeed(
                 name=name,
@@ -160,6 +162,8 @@ def _parse_feeds(raw: Any) -> tuple[EditorialFeed, ...]:
                 take_only=tuple(str(x) for x in (item.get("take_only") or ())),
                 rewrite_text=_as_bool(item.get("rewrite_text"), rewrite_default),
                 profanity_gate=str(item.get("profanity_gate") or profanity_default),
+                profanity_mode=str(item.get("profanity_mode") or item.get("profanity_gate") or profanity_default),
+                preserve_quotes=_as_bool(item.get("preserve_quotes"), False),
                 max_per_day=int(item.get("max_per_day") or 0),
                 wrap_template=_as_bool(item.get("wrap_template"), False),
             )

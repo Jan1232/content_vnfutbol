@@ -104,7 +104,7 @@ def soccerblog_gate(
                     [preview],
                     user_text,
                     json_mode=True,
-                    max_tokens=300,
+                    max_tokens=600,
                     task="soccerblog_gate",
                 )
             else:
@@ -115,7 +115,7 @@ def soccerblog_gate(
                         {"role": "user", "content": user_text},
                     ],
                     json_mode=True,
-                    max_tokens=300,
+                    max_tokens=600,
                     task="soccerblog_gate",
                 )
                 data = parse_json_object(raw)
@@ -142,6 +142,8 @@ def gate_verdict_of_row(row: dict[str, Any]) -> dict[str, Any] | None:
 
 def should_auto_publish(row: dict[str, Any]) -> bool:
     settings = get_settings()
+    if not bool(getattr(settings, "soccerblog_auto_publish", False)):
+        return False
     if not bool(getattr(settings, "soccerblog_gate_enabled", True)):
         return False
     v = gate_verdict_of_row(row)
