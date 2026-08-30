@@ -1,0 +1,172 @@
+{
+  "clubs": {
+    "galatasaray": {
+      "file": "galatasaray.png",
+      "names": ["Галатасарай", "Galatasaray", "GALATASARAY", "GS", "Гала"]
+    },
+    "goztepe": {
+      "file": "goztepe.png",
+      "names": ["Гёзтепе", "Goztepe", "Göztepe", "GOZTEPE"]
+    },
+    "juventus": {
+      "file": "juventus.png",
+      "names": ["Ювентус", "Juventus", "Juve", "Юве"]
+    },
+    "liverpool": {
+      "file": "liverpool.png",
+      "names": ["Ливерпуль", "Liverpool", "LFC"]
+    },
+    "arsenal": {
+      "file": "arsenal.png",
+      "names": ["Арсенал", "Arsenal", "AFC"]
+    },
+    "chelsea": {
+      "file": "chelsea.png",
+      "names": ["Челси", "Chelsea"]
+    },
+    "manchester_city": {
+      "file": "manchester_city.png",
+      "names": ["Манчестер Сити", "Manchester City", "Man City", "Сити"]
+    },
+    "manchester_united": {
+      "file": "manchester_united.png",
+      "names": ["Манчестер Юнайтед", "Manchester United", "Man United", "МЮ", "MU"]
+    },
+    "tottenham": {
+      "file": "tottenham.png",
+      "names": ["Тоттенхэм", "Tottenham", "Spurs", "Тоттенхэм Хотспур"]
+    },
+    "newcastle": {
+      "file": "newcastle.png",
+      "names": ["Ньюкасл", "Newcastle", "Newcastle United"]
+    },
+    "real_madrid": {
+      "file": "real_madrid.png",
+      "names": ["Реал Мадрид", "Real Madrid", "Real", "Реал"]
+    },
+    "barcelona": {
+      "file": "barcelona.png",
+      "names": ["Барселона", "Barcelona", "Barca", "Барса"]
+    },
+    "atletico_madrid": {
+      "file": "atletico_madrid.png",
+      "names": ["Атлетико", "Atletico Madrid", "Atletico", "Атлетико Мадрид"]
+    },
+    "bayern": {
+      "file": "bayern.png",
+      "names": ["Бавария", "Bayern Munich", "Bayern", "Бавария Мюнхен"]
+    },
+    "borussia_dortmund": {
+      "file": "borussia_dortmund.png",
+      "names": ["Боруссия Дортмунд", "Borussia Dortmund", "Dortmund", "Дортмунд"]
+    },
+    "psg": {
+      "file": "psg.png",
+      "names": ["ПСЖ", "PSG", "Paris Saint-Germain", "Paris SG", "Пари Сен-Жермен"]
+    },
+    "inter": {
+      "file": "inter.png",
+      "names": ["Интер", "Inter Milan", "Inter", "Интер Милан"]
+    },
+    "ac_milan": {
+      "file": "ac_milan.png",
+      "names": ["Милан", "AC Milan", "Milan"]
+    },
+    "napoli": {
+      "file": "napoli.png",
+      "names": ["Наполи", "Napoli"]
+    },
+    "roma": {
+      "file": "roma.png",
+      "names": ["Рома", "Roma", "AS Roma"]
+    },
+    "zenit": {
+      "file": "zenit.png",
+      "names": ["Зенит", "Zenit", "Zenit Saint Petersburg"]
+    },
+    "spartak_moscow": {
+      "file": "spartak_moscow.png",
+      "names": ["Спартак", "Spartak Moscow", "Спартак Москва"]
+    },
+    "cska_moscow": {
+      "file": "cska_moscow.png",
+      "names": ["ЦСКА", "CSKA Moscow", "CSKA", "ЦСКА Москва"]
+    },
+    "lokomotiv_moscow": {
+      "file": "lokomotiv_moscow.png",
+      "names": ["Локомотив", "Lokomotiv Moscow", "Локомотив Москва"]
+    },
+    "dynamo_moscow": {
+      "file": "dynamo_moscow.png",
+      "names": ["Динамо", "Dynamo Moscow", "Динамо Москва"]
+    },
+    "krasnodar": {
+      "file": "krasnodar.png",
+      "names": ["Краснодар", "Krasnodar", "FK Krasnodar"]
+    },
+    "fenerbahce": {
+      "file": "fenerbahce.png",
+      "names": ["Фенербахче", "Fenerbahce", "Fenerbahçe"]
+    },
+    "besiktas": {
+      "file": "besiktas.png",
+      "names": ["Бешикташ", "Besiktas", "Beşiktaş"]
+    },
+    "trabzonspor": {
+      "file": "trabzonspor.png",
+      "names": ["Трабзонспор", "Trabzonspor"]
+    },
+    "lille": {
+      "file": "lille.png",
+      "names": ["Лилль", "Lille", "LOSC"]
+    },
+    "marseille": {
+      "file": "marseille.png",
+      "names": ["Марсель", "Marseille", "OM"]
+    },
+    "monaco": {
+      "file": "monaco.png",
+      "names": ["Монако", "Monaco", "AS Monaco"]
+    },
+    "lyon": {
+      "file": "lyon.png",
+      "names": ["Лион", "Lyon", "OL"]
+    },
+    "nottingham_forest": {
+      "file": "nottingham_forest.png",
+      "names": ["Ноттингем Форест", "Nottingham Forest"]
+    },
+    "aston_villa": {
+      "file": "aston_villa.png",
+      "names": ["Астон Вилла", "Aston Villa"]
+    },
+    "sunderland": {
+      "file": "sunderland.png",
+      "names": ["Сандерленд", "Sunderland"]
+    },
+    "hull_city": {
+      "file": "hull_city.png",
+      "names": ["Халл Сити", "Hull City"]
+    },
+    "ajax": {
+      "file": "ajax.png",
+      "names": ["Аякс", "Ajax", "AFC Ajax"]
+    },
+    "psv": {
+      "file": "psv.png",
+      "names": ["ПСВ", "PSV", "PSV Eindhoven"]
+    },
+    "porto": {
+      "file": "porto.png",
+      "names": ["Порту", "Porto", "FC Porto"]
+    },
+    "benfica": {
+      "file": "benfica.png",
+      "names": ["Бенфика", "Benfica"]
+    },
+    "sporting": {
+      "file": "sporting.png",
+      "names": ["Спортинг", "Sporting CP", "Sporting Lisbon"]
+    }
+  }
+}

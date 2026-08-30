@@ -228,6 +228,34 @@ def _brand_context(channel_brand: dict[str, Any], *, template_name: str = "defau
     }
 
 
+def render_match_result(
+    match: dict[str, Any],
+    *,
+    news_id: int | str = "cover",
+    channel_brand: dict[str, Any] | None = None,
+) -> str:
+    """Рендер карточки результата матча (логотипы + счёт + авторы голов)."""
+    home_logo = match.get("home_logo") or {}
+    away_logo = match.get("away_logo") or {}
+    ctx: dict[str, Any] = {
+        "home": match.get("home_team") or "",
+        "away": match.get("away_team") or "",
+        "score_home": match.get("score_home"),
+        "score_away": match.get("score_away"),
+        "competition": match.get("competition") or "",
+        "stage": match.get("stage") or "",
+        "scorers_home": match.get("scorers_home") or [],
+        "scorers_away": match.get("scorers_away") or [],
+    }
+    hp = Path(str(home_logo.get("path") or ""))
+    ap = Path(str(away_logo.get("path") or ""))
+    if hp.is_file():
+        ctx["home_logo_uri"] = _file_to_data_uri(hp)
+    if ap.is_file():
+        ctx["away_logo_uri"] = _file_to_data_uri(ap)
+    return render_card("result", ctx, news_id=news_id, channel_brand=channel_brand)
+
+
 def render_card(
     template_name: str,
     context: dict[str, Any],

@@ -308,6 +308,9 @@ def parse_telegram_feed(
             if event_type in {"lifestyle", "meme"} and post_kind == "news":
                 event_type = "other"
             meme_flag = False
+        if verdict and str(verdict.get("post_subtype") or "").strip().lower() == "match_result":
+            event_type = "match_result"
+            entities["post_subtype"] = "match_result"
         from editorial.story_throttle import story_key as _story_key
 
         entities["story_key"] = _story_key(

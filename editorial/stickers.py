@@ -53,6 +53,10 @@ _EMOJI_RE = re.compile(
 
 def pool_path() -> Path:
     settings = get_settings()
+    custom = getattr(settings, "sticker_pool", None)
+    if custom:
+        path = Path(custom)
+        return path if path.is_absolute() else ROOT / path
     base = Path(getattr(settings, "moderation_feedback_dir", None) or ROOT / "data/editorial/feedback/moderation")
     return base.parent / "sticker_pool.json"
 

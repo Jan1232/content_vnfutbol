@@ -19,6 +19,7 @@ from editorial.channel_config import (
 from editorial.dedup import filter_new
 from editorial.discovery import fetch_fresh_news
 from editorial.editor import facts_from_item, rewrite as rewrite_item
+from editorial.light_edit import light_edit
 from editorial.match_enrich import enrich_news_item, enrich_row
 from editorial.factcheck import verify
 from editorial.fifa_ranking import refresh_top100, seed_from_yaml_if_empty
@@ -26,7 +27,7 @@ from editorial.imagery import ensure_template_crop, find_photo
 from editorial.models import NewsItem, utcnow_iso
 from editorial.openai_client import usage_scope
 from editorial.publisher import publish
-from editorial.render import BADGE_FOR_EVENT, render_post
+from editorial.render import BADGE_FOR_EVENT, render_match_result, render_post
 from editorial.scheduler import (
     ensure_slot_initialized,
     is_priority,
@@ -54,6 +55,11 @@ from editorial.store import (
 from editorial.topic_gate import check as topic_check, cluster_id_for, classify_event_rules
 
 _SCORE_RE = re.compile(r"(\d+)\s*[:\-–]\s*(\d+)")
+
+
+def _editorial_text_mode() -> str:
+    mode = (get_settings().editorial_text_mode or "light").strip().lower()
+    return mode if mode in {"light", "llm"} else "light"
 
 
 def _channel_enabled(cfg: EditorialChannelConfig) -> bool:
@@ -531,9 +537,6 @@ def _step_edit(row: dict[str, Any]) -> str:
                 last_error="",
             )
             row = get_news(news_id) or enriched
-        result = rewrite_item(row, facts=facts_from_item(row))
-        post_text = result["post_text"]
-        settings = get_settings()
         try:
             entities = json.loads(row.get("entities_json") or "{}")
         except Exception:
@@ -542,7 +545,20 @@ def _step_edit(row: dict[str, Any]) -> str:
         from editorial.profanity import apply_profanity, effective_profanity_mode, profanity_ok
 
         mode = effective_profanity_mode(feed_mode=prof_mode)
-        post_text = apply_profanity(post_text, mode=mode)
+        if _editorial_text_mode() == "light":
+            result = light_edit(
+                str(row.get("title") or ""),
+                str(row.get("body") or ""),
+                profanity_mode=mode,
+            )
+            post_text = (result.get("post_text") or "").strip()
+            if not post_text:
+                update_news(news_id, status="held", last_error="пустой текст после light_edit")
+                return "held"
+        else:
+            result = rewrite_item(row, facts=facts_from_item(row))
+            post_text = result["post_text"]
+            post_text = apply_profanity(post_text, mode=mode)
         ok, why = profanity_ok(post_text, mode=mode)
         if not ok:
             update_news(
@@ -609,6 +625,26 @@ def _step_image(channel: EditorialChannelConfig, row: dict[str, Any]) -> str:
         entities = {}
     if str(entities.get("tg_post_type") or "") == "roundup":
         template = "roundup"
+    from editorial.match_result import is_match_result_row, prepare_match_result
+
+    if is_match_result_row(row, entities):
+        try:
+            payload, _, _ = prepare_match_result(row)
+        except Exception as e:
+            update_news(news_id, status="held", last_error=f"match_result: {e}"[:800])
+            return "held"
+        entities = dict(entities)
+        entities["match_result"] = payload
+        entities["post_subtype"] = "match_result"
+        update_news(
+            news_id,
+            status="captioning",
+            event_type="match_result",
+            entities_json=json.dumps(entities, ensure_ascii=False),
+            image_path=str(payload.get("donor_image") or ""),
+            last_error="",
+        )
+        return "captioning"
     path = find_photo(row, template_name=template)
     if not path:
         update_news(news_id, status="held", last_error="нет релевантного фото")
@@ -631,8 +667,14 @@ def _step_caption(row: dict[str, Any]) -> str:
             last_error="",
         )
         return "rendering"
-    cap = generate_caption(row, row.get("post_text") or "")
-    text = (cap.get("caption_line1") or "").strip()
+    if _editorial_text_mode() == "light":
+        from editorial.cover_text import clip_to_cover
+        from editorial.editor import normalize_ru_typo
+
+        text = clip_to_cover(normalize_ru_typo(str(row.get("headline") or row.get("title") or "")))
+    else:
+        cap = generate_caption(row, row.get("post_text") or "")
+        text = (cap.get("caption_line1") or "").strip()
     update_news(
         news_id,
         status="rendering",
@@ -651,6 +693,23 @@ def _step_render(channel: EditorialChannelConfig, row: dict[str, Any]) -> str:
     except Exception:
         entities = {}
     tg_type = str(entities.get("tg_post_type") or (row.get("raw") or {}).get("tg_post_type") or "")
+    mr = entities.get("match_result")
+    if isinstance(mr, dict) and mr.get("score_home") is not None:
+        cover = render_match_result(
+            mr,
+            news_id=news_id,
+            channel_brand=brand_render_context(channel),
+        )
+        prio = is_priority(row, channel)
+        update_news(
+            news_id,
+            status="ready",
+            cover_path=cover,
+            post_kind="match_result",
+            is_priority=1 if prio else 0,
+            last_error="",
+        )
+        return "ready"
     template = "roundup" if tg_type == "roundup" else channel.template_for(row.get("event_type") or "other")
     badge = BADGE_FOR_EVENT.get(row.get("event_type") or "", "НОВОСТЬ")
     image_path = ensure_template_crop(row.get("image_path") or "", template_name=template)

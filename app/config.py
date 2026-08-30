@@ -156,6 +156,17 @@ class Settings(BaseSettings):
     profanity_filter: str = "strict"
     profanity_mode: str = ""  # soften | strict; пусто = profanity_filter
     profanity_map: Path = ROOT / "editorial" / "profanity_map.yaml"
+    # light_edit: детерминированная косметика вместо LLM rewrite
+    editorial_text_mode: str = "light"  # light | llm
+    light_edit_profanity: str = ""  # soften | strict; пусто = profanity_mode
+    light_edit_strip: Path = ROOT / "editorial" / "light_edit_strip.yaml"
+    sticker_pool: Path = ROOT / "editorial" / "sticker_pool.json"
+    # шаблон результата матча (донорские табло)
+    result_template_enabled: bool = True
+    result_min_conf: float = 0.7
+    result_logo_fallback: bool = False
+    result_require_scorers: bool = True
+    club_logos: Path = ROOT / "editorial" / "club_logos.json"
     # round-9 TG donors
     editorial_rss_enabled: bool = False
     tg_incremental: bool = True

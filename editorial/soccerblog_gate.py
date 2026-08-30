@@ -14,7 +14,7 @@ from editorial.jsonutil import parse_json_object
 from editorial.media_preview import media_preview_from_post
 from editorial.openai_client import get_client, usage_scope
 
-GATE_VERSION = 2
+GATE_VERSION = 3
 
 _GATE_SYSTEM = (
     "Ты классификатор постов футбольных Telegram-каналов. Смотри текст И медиа.\n"
@@ -28,13 +28,17 @@ _GATE_SYSTEM = (
     "- template — упаковываем в свой шаблон (ДЕФОЛТ для большинства):\n"
     "  * любая футбольная новость: трансфер, результат матча, гол, состав, заявление, аналитика;\n"
     "  * пост-картинка со счётом/графикой матча — это НОВОСТЬ, не мем (счёт ≠ юмор).\n"
+    "post_subtype (только если kind=template):\n"
+    "- match_result — завершённый матч: на картинке табло со счётом X:Y, гербы/названия команд;\n"
+    "- other — остальные template-посты.\n"
     "- reject — не публикуем:\n"
     "  * реклама, промо, ставки, букмекеры, казино, промокоды, партнёрские посты;\n"
     "  * не футбол;\n"
     "  * голая турнирная таблица, технический дубль.\n\n"
     "Правило по умолчанию: если футбол, не видео/мем, не реклама → template.\n"
     "Отличай мем от новости-с-графикой: счёт матча на картинке = template; шутка на картинке = as_is.\n\n"
-    'JSON: {"kind":"as_is|template|reject","reason":"...","confidence":0.0,'
+    'JSON: {"kind":"as_is|template|reject","post_subtype":"match_result|other",'
+    '"reason":"...","confidence":0.0,'
     '"is_video":false,"is_ad":false,"text_lang":"ru|en|other"}'
 )
 
@@ -195,6 +199,11 @@ def _normalize_verdict(
         out["fallback"] = "gate_error"
     elif data.get("fallback"):
         out["fallback"] = data.get("fallback")
+    ps = str(data.get("post_subtype") or "").strip().lower()
+    if ps in {"match_result", "other"}:
+        out["post_subtype"] = ps
+    elif kind == "template":
+        out["post_subtype"] = "other"
     return out
 
 
