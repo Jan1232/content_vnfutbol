@@ -41,3 +41,21 @@ logs/
 # Generated covers / caches
 **/covers/
 **/tg_cache/
+
+# Local MAX auto-posting / SEO (not this content system)
+/app/
+/assets/
+/docs/
+/parsers/
+/rules/
+/scripts/
+/seo/
+/workers/
+/tests/
+/ecosystem.config.cjs
+/requirements.txt
+
+# Calibration / eval dumps
+calibration_log*
+eval_run*
+terra_run*

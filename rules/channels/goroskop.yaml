@@ -1,8 +1,0 @@
-# Оверрайд: Гороскоп — https://max.ru/channel_znak_zodiaca
-# Ядро (require_media: true) дополняется: текстовые посты без медиа тоже ок.
-
-chat_id: -77021716331226
-title: Гороскоп
-link_contains: znak_zodiaca
-
-require_media: false
