@@ -1,47 +1,81 @@
-# MAX Repost
+# content_vnfutbol
 
-Бот наполняет каналы/группы MAX контентом из источников (Telegram / VK / RSS).
-Админка на IP хоста (порт 8790). Защита: логин/пароль.
+Система **создания** футбольного контента: сбор доноров → фильтр → извлечение факта → генерация поста → очередь на ручную приёмку.
 
-## Доступ к админке
+Это не автопостинг и не админка MAX. Публикация в канал здесь не делается.
+
+## Как это устроено
+
+```
+Telegram-доноры
+      ↓
+src/ingest          фильтр мусора, extract факта, дедуп, медиа
+      ↓
+src/generate        Terra-генератор + guardrail
+      ↓
+очередь в SQLite    data/ingest.db
+      ↓
+live-бот в ЛС       ✅ / ❌ / ✏️ / смена категории / картинка
+```
+
+- `src/ingest` — Telethon читает источники, отсекает рекламу и мусор, достаёт факт, подбирает медиа (источник или Яндекс.Картинки).
+- `src/generate` — пишет пост в тоне канала. Калибровочный бот (`moderator_bot`) отдельно: только оценка стиля, без очереди из доноров.
+- `src/config.py` — модели и клиент API, отдельно от автопостинга.
+
+Источники задаются в `src/ingest/sources.py`.
+
+## Запуск
 
 ```bash
-ssh -L 8790:127.0.0.1:8790 root@ВАШ_СЕРВЕР
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-generate.txt
+cp .env.example .env
 ```
 
-Открыть в браузере: http://127.0.0.1:8790
+В `.env` нужны как минимум `OPENAI_API_KEY`, `BOT_TOKEN_OBUCHENIE`, `OWNER_CHAT_ID` и Telethon-сессия.
 
-Логин и пароль — в `/var/max-repost/.env` (`ADMIN_LOGIN`, `ADMIN_PASSWORD`).
-
-## Сервисы
+Один процесс: сбор + бот очереди в ЛС:
 
 ```bash
-systemctl status max-repost-admin max-repost-worker
-systemctl restart max-repost-admin max-repost-worker
-journalctl -u max-repost-worker -f
+python -m src.ingest.run
+python -m src.ingest.run --warm 20
 ```
 
-## Логика
+Разовый прогон истории за сутки:
 
-1. Воркер синхронизирует каналы бота (`GET /chats` + updates `bot_added`).
-2. В админке: канал → **Источники** → добавить URL.
-3. При добавлении источника история **не** публикуется — ставится watermark.
-4. Новые посты фильтруются (рекламные слова + любые ссылки в тексте) и уходят в привязанный MAX-канал.
-
-## VK
-
-Для стабильного парсинга VK добавьте сервисный ключ приложения в `.env`:
-
-```
-VK_ACCESS_TOKEN=...
+```bash
+python -m src.ingest.run_24h
+python -m src.ingest.run_24h --hours 24 --collect-only
+python -m src.ingest.run_24h --bot-only
 ```
 
-Документация MAX API: https://dev.max.ru/docs-api  
-Выбор сервисов: https://dev.max.ru/docs/maxbusiness/selectionservices
+Генерация одного поста из факта (без ingest):
 
-## Автоперевод (Groq)
+```bash
+python -m src.generate.pipeline --fact "..." --archetype transfer --veracity verified
+```
 
-1. Ключ: https://console.groq.com/keys
-2. В `/var/max-repost/.env`: `GROQ_API_KEY=gsk_...`
-3. `systemctl restart max-repost-admin max-repost-worker`
-4. В админке при добавлении источника включите «Автоперевод на русский».
+Калибровка стиля (не публикация):
+
+```bash
+python -m src.generate.moderator_bot
+```
+
+## Переменные окружения
+
+| Переменная | Зачем |
+|---|---|
+| `OPENAI_API_KEY` | генерация, extract, эмбеддинги |
+| `OPENAI_BASE_URL` | совместимый endpoint |
+| `OPENAI_HTTP_PROXY` / `SCRAPER_HTTP_PROXY` | прокси для API и Telethon |
+| `BOT_TOKEN_OBUCHENIE` | бот очереди / калибровки |
+| `OWNER_CHAT_ID` | кому слать очередь |
+| `TG_API_ID` / `TG_API_HASH` | user-session Telethon |
+| `INGEST_DB` | путь к SQLite, по умолчанию `data/ingest.db` |
+
+Секреты только в `.env`, его в git нет.
+
+## Данные
+
+`data/` и логи в репозиторий не входят. Там сессии Telethon, медиа и SQLite-очереди.
