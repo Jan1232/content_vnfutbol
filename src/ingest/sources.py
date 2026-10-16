@@ -28,6 +28,44 @@ SOURCES = [
 
 SOURCE_USERNAMES = [s["username"] for s in SOURCES]
 
+# Отображаемые имена каналов — для чистки сырья (не путать с новостью)
+SOURCE_TITLES: dict[str, tuple[str, ...]] = {
+    "championsleague365": (
+        "Лига Чемпионов",
+        "Лига чемпионов",
+        "Champions League",
+    ),
+    "zhfootballll": (
+        "ЖИЗНЬ ФУТБОЛ",
+        "Жизнь футбол",
+    ),
+    "footballhourss": (
+        "Football Hours",
+        "FootballHours",
+    ),
+    "thesoccerblogteam": (
+        "The Soccer Blog",
+        "Soccer Blog Team",
+    ),
+}
+
+
+def source_meta_phrases(username: str) -> list[str]:
+    """Username + названия канала, которые нельзя принимать за факт."""
+    u = (username or "").strip().lstrip("@")
+    out: list[str] = []
+    if u:
+        out.extend([u, f"@{u}"])
+    out.extend(SOURCE_TITLES.get(u, ()))
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for p in out:
+        key = p.casefold()
+        if key and key not in seen:
+            seen.add(key)
+            uniq.append(p)
+    return uniq
+
 # Маркеры рекламы/ставок/саморекламы (пополняемый список)
 AD_MARKERS = [
     "кэф",

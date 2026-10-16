@@ -1,0 +1,16 @@
+[Unit]
+Description=MAX Repost SEO beacon worker (match titles + promo posts)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/max-repost
+Environment=PYTHONPATH=/var/max-repost
+Environment=PATH=/root/.nvm/versions/node/v22.22.3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/var/max-repost/scripts/run-seo-worker.sh
+Restart=always
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target

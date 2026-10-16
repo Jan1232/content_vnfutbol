@@ -1,0 +1,20 @@
+# @editsfootballers → ФУТБОЛЬНЫЕ ЭДИТЫ,НАРЕЗКИ🔥
+# Архив старых роликов: только видео, без текста.
+# Фикс слоты: 9:00, 12:30, 16:30, 22:30 (Екатеринбург).
+
+chat_id: -71534604699075
+title: ФУТБОЛЬНЫЕ ЭДИТЫ,НАРЕЗКИ🔥
+url_contains:
+  - editsfootballers
+
+require_media: true
+require_video: true
+drop_caption: true
+archive_drip: true
+max_per_day: 4
+tz: Asia/Yekaterinburg
+publish_times:
+  - "09:00"
+  - "12:30"
+  - "16:30"
+  - "22:30"

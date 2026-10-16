@@ -1,0 +1,10 @@
+[Unit]
+Description=MAX daily channel digest at 09:00 Yekaterinburg
+
+[Timer]
+OnCalendar=*-*-* 07:00:00
+Persistent=true
+Unit=max-repost-digest.service
+
+[Install]
+WantedBy=timers.target

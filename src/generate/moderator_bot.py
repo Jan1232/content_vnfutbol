@@ -24,6 +24,7 @@ from aiogram.types import (
 )
 
 from src.config import FAN_MODEL, ROOT, _load_env
+from src.generate.html_post import format_post_html
 from src.generate.calibration import (
     ACTIVE_RUN,
     decided_eval_ids,
@@ -105,7 +106,7 @@ def _keyboard() -> InlineKeyboardMarkup:
 
 def _card_html(item: dict, post: str, flags: list[str]) -> str:
     fact = html.escape(item["fact"])
-    body = html.escape(post)
+    body = format_post_html(post)
     meta = (
         f"#{item['id']} · {html.escape(item['archetype'])} · "
         f"{html.escape(item['veracity'])} · sensation={item['is_sensation']}"

@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block title %}Каналы — MAX Repost{% endblock %}
+{% block body %}
+<div class="shell-bar">
+  <div class="shell-brand">
+    <div class="shell-logo" aria-hidden="true"></div>
+    <div class="shell-brand-text">
+      <div class="shell-brand-name">MAX Repost</div>
+      <div class="shell-brand-sub">Панель управления публикациями</div>
+    </div>
+  </div>
+  <div class="shell-actions">
+    <a class="ghost small" href="/seo">SEO</a>
+    <form method="post" action="/sync">
+      <input type="hidden" name="csrf" value="{{ csrf }}" />
+      <button type="submit" class="ghost small" title="Подтянуть новые каналы и обновить аватарки/подписчиков">Обновить список</button>
+    </form>
+    <form method="post" action="/logout">
+      <button type="submit" class="ghost small">Выйти</button>
+    </form>
+  </div>
+</div>
+
+<header class="top">
+  <div class="top-copy">
+    <p class="page-kicker">Каналы</p>
+    <h1>Куда публикуем</h1>
+    <p class="muted">Вотермарка, ссылка в конце поста и источники для каналов MAX, Telegram и ВКонтакте</p>
+  </div>
+</header>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<section class="add-box add-destinations" style="margin-bottom: 20px">
+  <div class="add-dest-row">
+    {% if tg_bots_ready %}
+    <div>
+      <h2>Telegram-канал</h2>
+      <p class="muted">Бот уже должен быть админом канала. Укажите @username, ссылку t.me/… или chat_id.</p>
+      <form method="post" action="/channels/telegram/add" class="add-form">
+        <input type="hidden" name="csrf" value="{{ csrf }}" />
+        <input name="ref" placeholder="@mychannel или https://t.me/mychannel" required />
+        <button type="submit" class="btn">Добавить TG-канал</button>
+      </form>
+    </div>
+    {% endif %}
+    <div>
+      <h2>Сообщество ВКонтакте</h2>
+      <p class="muted">Ключ из группы: Управление → Работа с API → Создать ключ (стена, фото, видео).</p>
+      <button type="button" class="btn" id="vk-open">Добавить группу ВК</button>
+    </div>
+  </div>
+</section>
+
+{% if vk_session %}
+<section class="add-box" id="vk-session">
+  <h2>Сессия VK для фото</h2>
+  <p class="muted">На этом сервере нет экрана, поэтому войти в Chrome здесь нельзя. Раз в 5 минут воркер сам снимет свежий ключ из сохранённых Cookie вашей сессии VK.</p>
+  {% if vk_session.has_session %}
+    <p class="detail">файл сессии есть{% if vk_session_refreshed %} · обновлён {{ vk_session_refreshed }}{% endif %}</p>
+  {% else %}
+    <p class="hint">Сессии ещё нет. На своём компьютере откройте vk.com → F12 → Network → любой запрос → скопируйте заголовок Cookie и вставьте ниже. Не используйте document.cookie.</p>
+  {% endif %}
+  {% if vk_session.last_error %}<p class="error">{{ vk_session.last_error }}</p>{% endif %}
+  <form method="post" action="/vk-session/cookies" class="wm-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}" />
+    <label class="wm-label">Cookie с vk.com (DevTools → Network)
+      <textarea name="cookie_header" rows="3" placeholder="remixsid=…; remixstid=…" autocomplete="off" required></textarea>
+    </label>
+    <button type="submit" class="btn">Сохранить Cookie и обновить ключ</button>
+  </form>
+  <form method="post" action="/vk-session" enctype="multipart/form-data" class="add-form" style="margin-top: 12px">
+    <input type="hidden" name="csrf" value="{{ csrf }}" />
+    <input type="file" name="file" accept=".json,application/json" required />
+    <button type="submit" class="ghost small">Или загрузить storage_state.json</button>
+  </form>
+  {% if vk_session.has_session %}
+  <form method="post" action="/vk-session/refresh" style="margin-top: 10px">
+    <input type="hidden" name="csrf" value="{{ csrf }}" />
+    <button type="submit" class="ghost small">Обновить ключ сейчас</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if tg_bots_ready %}
+<section class="add-box tg-bot-box" id="tg-bots">
+  <h2>Telegram-бот</h2>
+  <p class="muted">Каналы и группы, куда добавлены боты из <code>TG_BOT_TOKENS</code>. Среди них и TG-источники, если бот там админ или участник.</p>
+  {% if tg_bots %}
+  <p class="tg-bot-idents">
+    {% for b in tg_bots %}
+      <span class="badge badge-tg">{% if b.username %}@{{ b.username }}{% else %}id {{ b.id }}{% endif %}{% if b.name %} · {{ b.name }}{% endif %}</span>
+    {% endfor %}
+  </p>
+  {% endif %}
+  {% if tg_bot_error %}<p class="error">{{ tg_bot_error }}</p>{% endif %}
+  {% if not tg_bot_chats %}
+    <p class="hint">Пока не видно чатов. Добавьте бота в канал как администратора и нажмите «Обновить список».</p>
+  {% else %}
+  <ul class="tg-conn-list">
+    {% for ch in tg_bot_chats %}
+    <li class="tg-conn">
+      <div class="meta">
+        <div class="title">
+          {{ ch.title or ('#' ~ ch.chat_id) }}
+          {% if ch.is_destination %}<span class="badge badge-tg">публикация</span>{% endif %}
+          {% if ch.is_source %}<span class="badge">источник</span>{% endif %}
+        </div>
+        <div class="sub">
+          <span>{{ ch.status_ru or ch.status or ch.type }}</span>
+          {% if ch.username %}<span>·</span><span>@{{ ch.username }}</span>{% endif %}
+          {% if ch.link %}<span>·</span><a href="{{ ch.link }}" target="_blank" rel="noopener">открыть</a>{% endif %}
+          {% if ch.is_source and ch.source_count %}<span>·</span><span>в {{ ch.source_count }} ист.</span>{% endif %}
+        </div>
+      </div>
+      <div class="tg-conn-actions">
+        {% if ch.is_destination %}
+          <a class="btn small" href="/channels/{{ ch.chat_id }}/sources">Источники</a>
+        {% elif ch.username or ch.chat_id %}
+          <form method="post" action="/channels/telegram/add">
+            <input type="hidden" name="csrf" value="{{ csrf }}" />
+            <input type="hidden" name="ref" value="{% if ch.username %}@{{ ch.username }}{% else %}{{ ch.chat_id }}{% endif %}" />
+            <button type="submit" class="ghost small">В каналы публикации</button>
+          </form>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
+
+<dialog class="modal" id="vk-modal">
+  <form method="post" action="/channels/vk/add" class="modal-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}" />
+    <h2>Добавить группу ВК</h2>
+    <p class="muted">Ключ сообщества определяет группу и публикует текст. Фото и видео VK принимает только с ключа администратора (пользовательский: photos, wall, video, groups, offline).</p>
+    <label class="wm-label">Ключ сообщества
+      <textarea name="token" rows="3" required placeholder="vk1.a.…" autocomplete="off"></textarea>
+    </label>
+    <label class="wm-label">Ключ администратора (для фото)
+      <textarea name="user_token" rows="3" placeholder="пользовательский vk1.a.…" autocomplete="off"></textarea>
+    </label>
+    <div class="modal-actions">
+      <button type="button" class="ghost" id="vk-close">Отмена</button>
+      <button type="submit" class="btn">Распознать и добавить</button>
+    </div>
+  </form>
+</dialog>
+
+{% if channels %}
+<div class="stats-strip">
+  <div class="stat-chip"><strong>{{ channels|length }}</strong> каналов</div>
+  <div class="stat-chip"><strong>{{ channels|sum(attribute='sources_count') }}</strong> источников</div>
+</div>
+{% endif %}
+
+{% if not channels %}
+  <p class="empty">Пока нет каналов. Добавьте бота в канал как администратора и нажмите «Обновить список».</p>
+{% else %}
+<ul class="channel-list">
+  {% for ch in channels %}
+  <li class="channel channel-card">
+    <img class="avatar" src="{{ ch.icon_url or '/static/placeholder.svg' }}" alt="" width="64" height="64" />
+    <div class="meta">
+      <div class="title">{{ ch.title or ('#' ~ ch.chat_id) }}{% if (ch.platform or 'max') == 'telegram' %}<span class="badge badge-tg">Telegram</span>{% elif (ch.platform or 'max') == 'vk' %}<span class="badge badge-vk">ВКонтакте</span>{% else %}<span class="badge">MAX</span>{% endif %}</div>
+      <div class="sub">
+        <span>{{ ch.type }}</span>
+        <span>·</span>
+        <span>{{ ch.participants_count }} подп.</span>
+        {% if ch.link %}<span>·</span><a href="{{ ch.link }}" target="_blank" rel="noopener">открыть</a>{% endif %}
+        {% if ch.sources_count %}<span>·</span><span>{{ ch.sources_count }} ист.</span>{% endif %}
+      </div>
+      <div class="channel-settings">
+        <form method="post" action="/channels/{{ ch.chat_id }}/watermark" class="wm-form">
+          <input type="hidden" name="csrf" value="{{ csrf }}" />
+          <label class="wm-label">Вотермарка на фото
+            <input name="watermark_text" value="{{ ch.watermark_text or '' }}" placeholder="@channel / текст" maxlength="80" />
+          </label>
+          <button type="submit" class="ghost small">Сохранить</button>
+        </form>
+        <form method="post" action="/channels/{{ ch.chat_id }}/footer-link" class="wm-form">
+          <input type="hidden" name="csrf" value="{{ csrf }}" />
+          <label class="wm-label">Текст footer
+            <input name="footer_link_text" value="{{ ch.footer_link_text or '' }}" placeholder="Подписаться | Канал" maxlength="120" />
+          </label>
+          <label class="wm-label">Ссылка footer
+            <input name="footer_link" value="{{ ch.footer_link or '' }}" placeholder="https://max.ru/…" maxlength="500" />
+          </label>
+          <label class="wm-label check-label">
+            <input type="checkbox" name="footer_as_button" value="1" {% if ch.footer_as_button %}checked{% endif %} />
+            Показывать как кнопку
+          </label>
+          <button type="submit" class="ghost small">Сохранить</button>
+        </form>
+        <label class="wm-label check-label">
+          <input class="js-require-media" type="checkbox" data-chat-id="{{ ch.chat_id }}" value="1" {% if ch.require_media %}checked{% endif %} />
+          Только посты с медиа
+        </label>
+        <label class="wm-label check-label">
+          <input class="js-require-text" type="checkbox" data-chat-id="{{ ch.chat_id }}" value="1" {% if ch.require_text %}checked{% endif %} />
+          Не публиковать медиа без текста
+        </label>
+        {% if (ch.platform or 'max') == 'vk' %}
+        <form method="post" action="/channels/{{ ch.chat_id }}/vk-upload-token" class="wm-form">
+          <input type="hidden" name="csrf" value="{{ csrf }}" />
+          <label class="wm-label">Ключ администратора VK (фото/видео)
+            <input type="password" name="upload_token" value="" placeholder="{% if ch.upload_token %}ключ сохранён — вставьте новый, чтобы заменить{% else %}пользовательский vk1.a.… (photos, wall, video, offline){% endif %}" autocomplete="off" />
+          </label>
+          <button type="submit" class="ghost small">Сохранить</button>
+        </form>
+        {% if ch.upload_token %}<div class="detail">фото: ключ администратора задан</div>{% else %}<div class="detail">фото не уходят: нужен ключ администратора, ключ сообщества даёт VK 27</div>{% endif %}
+        {% endif %}
+        {% if ch.watermark_text %}<div class="detail">на фото: {{ ch.watermark_text }}</div>{% endif %}
+        {% if ch.footer_link %}<div class="detail">{% if ch.footer_as_button %}кнопка{% else %}ссылка{% endif %}: {% if ch.footer_link_text %}«{{ ch.footer_link_text }}» → {% endif %}{{ ch.footer_link }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="channel-actions">
+      <a class="btn" href="/channels/{{ ch.chat_id }}/sources">Источники{% if ch.sources_count %} · {{ ch.sources_count }}{% endif %}</a>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+<form id="media-filter-save" method="post" action="/channels/require-media" class="page-save">
+  <input type="hidden" name="csrf" value="{{ csrf }}" />
+  <p class="hint">Галочки «только медиа» и «без текста» сохраняются этой кнопкой, страница при клике не перезагружается.</p>
+  <button type="submit" class="btn">Сохранить</button>
+</form>
+{% endif %}
+{% endblock %}

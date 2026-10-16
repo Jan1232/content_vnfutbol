@@ -1,0 +1,13 @@
+# Аниме эдиты — https://max.ru/channel_animedit
+# Источник AniTik: название трека оставляем, ссылку убираем.
+# Подпись «AniTik» в конце вырезаем.
+
+chat_id: -79631407823578
+title: Аниме эдиты
+link_contains: channel_animedit
+url_contains:
+  - anitik_edits
+
+strip_bare_domains: false
+strip_exact_lines:
+  - AniTik

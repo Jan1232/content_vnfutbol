@@ -1,0 +1,15 @@
+[Unit]
+Description=MAX Repost Worker (sync/parse/publish)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/max-repost
+Environment=PYTHONPATH=/var/max-repost
+ExecStart=/var/max-repost/scripts/run-worker.sh
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

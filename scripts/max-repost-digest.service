@@ -1,0 +1,10 @@
+[Unit]
+Description=MAX daily channel digest (reach + subs)
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/var/max-repost
+Environment=PYTHONPATH=/var/max-repost
+ExecStart=/var/max-repost/.venv/bin/python -u workers/daily_digest.py --send
+User=root

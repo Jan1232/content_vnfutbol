@@ -1,0 +1,7 @@
+# Только источник SoccerBlog — на любом назначении (MAX, VK, …).
+# Ядро (реклама / CTA / медиа) остаётся. Дополнительно не берём посты с матом.
+
+url_contains:
+  - thesoccerblogteam
+
+block_profanity: true

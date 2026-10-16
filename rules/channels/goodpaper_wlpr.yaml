@@ -1,0 +1,12 @@
+# Только источник wlpr8k → GoodPaper: посты-документы (исходники JPG).
+
+chat_id: -77250724273564
+title: GoodPaper | Обои на телефон
+link_contains: channel_goodpaper
+url_contains:
+  - wlpr8k
+
+require_media: true
+documents_only: true
+fixed_caption: "Ставь ❤️ если нравится"
+also_send_files: false

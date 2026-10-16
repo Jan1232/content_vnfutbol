@@ -1,0 +1,8 @@
+# Оверрайд: Шарий — https://max.ru/channel_anatol_shary
+# Как у «Шарий СВО новости»: текстовые посты без фото и видео тоже публикуем.
+
+chat_id: -79631652207322
+title: Шарий
+link_contains: channel_anatol_shary
+
+require_media: false

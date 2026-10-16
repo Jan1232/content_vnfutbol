@@ -1,0 +1,26 @@
+# SEO-маяк: только Лига чемпионов УЕФА (основной турнир + квалификация).
+# https://max.ru/channel_champions_lige
+
+slug: champions_lige
+chat_id: -77925117901530
+link: https://max.ru/channel_champions_lige
+
+competitions: [CL]
+providers: [auto]
+
+horizon_days: 60
+post_match_grace_min: 120
+
+pick_mode: hype
+hype_window_days: 4
+
+competition_label: "Лига чемпионов УЕФА"
+competition_label_qual: "Квалификация Лиги чемпионов УЕФА"
+
+idle_title: "лига чемпионов уефа матч смотреть онлайн прямая трансляция бесплатно"
+title_suffix: "матч смотреть онлайн прямая трансляция бесплатно"
+
+target_community: https://max.ru/channel_vnfutbol
+pin_post: true
+notify_title_change: false
+enabled: true

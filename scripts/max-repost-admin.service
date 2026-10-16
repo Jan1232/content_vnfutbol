@@ -1,0 +1,15 @@
+[Unit]
+Description=MAX Repost Admin
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/max-repost
+Environment=PYTHONPATH=/var/max-repost
+ExecStart=/var/max-repost/scripts/run-admin.sh
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

@@ -21,11 +21,15 @@ _META_WRAPPERS = (
 
 def test_prompt_has_strict_rules_and_fewshots() -> None:
     p = extract_system_prompt()
-    assert "КОРОЧЕ ИЛИ РАВНО" in p
+    assert "КОРОЧЕ ИЛИ РАВНО" not in p
+    assert "НЕ должен быть длиннее" not in p
+    assert "ПОЛНО и ТОЧНО" in p
+    assert "ИГНОРИРУЙ" in p
     assert "is_garbage" in p
     assert "СПИСКИ" in p
     assert "канцеляр" in p.lower() or "НЕ канцеляр" in p
     assert "Бартра" in p
+    assert "стоп" in p.lower()
     assert "SECRET EVENT" in p
     assert "Олисе" in p
     for w in _META_WRAPPERS[:2]:
@@ -127,7 +131,6 @@ def test_list_preservation_contract() -> None:
         "Игрок сезона в лиге/года в Германии/сезона в Баварии — Олисе; "
         "лучший игрок ЛЧ — Хвича; лучший бомбардир ЛЧ — Мбаппе"
     )
-    assert len(good_fact) <= len(awards_raw)
     assert "в посте" not in good_fact.lower()
     assert "перечислены" not in good_fact.lower()
     # list-like: разделители / точки с запятой / несколько пунктов
@@ -183,64 +186,29 @@ def test_list_preservation_contract() -> None:
                         )
     assert result["status"] == "queued", result
     assert result["fact"] == good_fact
-    assert len(result["fact"]) <= len(awards_raw)
     print("OK list preservation contract queued")
 
 
 def test_length_rule_examples_from_log() -> None:
-    """Критерий 1: на примерах из лога «хороший» fact ≤ raw, без meta-обёртки."""
-    examples = [
-        (
-            "⚡️ ПЕНАЛЬТИ НЕ БУДУТ ПЕРЕБИВАТЬ! Бартра забежал в штрафную, но VAR не увидел нарушения",
-            "Бартра забежал в штрафную, VAR не увидел нарушения",
-        ),
-        (
-            "🇫🇷 Переход в «ПСЖ» из «Барселоны»? Качество игроков здесь просто выше. — Ферран Торрес",
-            "Ферран Торрес: переход в ПСЖ из Барсы — шаг вперёд, качество игроков выше",
-        ),
-        (
-            "🇪🇸 Жезус – новый игрок «Барсы»\n💸 Сумма трансфера: €10 млн",
-            "Жезус — новый игрок Барсы, €10 млн",
-        ),
-        (
-            "❌ ОТМЕНА HERE WE GO! Трансфер Камара в Челси сорвался",
-            "ОТМЕНА: трансфер Камара в Челси сорвался",
-        ),
-        (
-            "⚡️ ГОООООЛ! Беллингем 19'\n🇪🇸 Реал 1:0 Малага 🇪🇸",
-            "Беллингем 19' Реал 1:0 Малага",
-        ),
-        (
-            "Сообщают: Ришарлисон близок к Трабзонспору >€25млн",
-            "Ришарлисон близок к Трабзонспору >€25млн",
-        ),
-        (
-            "Официально: Талиска — игрок Аль-Джазиры. Свободный агент.",
-            "Талиска — игрок Аль-Джазиры, свободный агент",
-        ),
-        (
-            "Игрок сезона – Олисе\nИгрок года – Олисе\nЛучший в ЛЧ – Хвича",
-            "Игрок сезона/года — Олисе; лучший в ЛЧ — Хвича",
-        ),
-        (
-            "Романо: Осимхен близок к Аль-Хиляль",
-            "Романо: Осимхен близок к Аль-Хиляль",
-        ),
-        (
-            "Мбаппе забил дубль, ПСЖ победил 3:1",
-            "Мбаппе дубль, ПСЖ 3:1",
-        ),
-    ]
-    for raw, fact in examples:
-        assert len(fact) <= len(raw), (len(fact), len(raw), fact, raw)
-        low = fact.lower()
-        for w in _META_WRAPPERS:
-            assert w not in low, (w, fact)
-    # «плохой» Bartra inflate — ловим контрастом
-    bad = "Марк Бартра забежал в штрафную площадь; VAR не зафиксировал нарушение. Пенальти не будут перебивать."
-    raw_b = "⚡️ ПЕНАЛЬТИ НЕ БУДУТ ПЕРЕБИВАТЬ! Бартра забежал в штрафную, но VAR не увидел нарушения"
-    assert len(bad) > len(raw_b)
-    print(f"OK length/meta rules on {len(examples)} examples")
+    """v3.4: разбор сохраняет объяснение; meta-обёртки запрещены; длина не потолок."""
+    raw = (
+        "Бартра забежал в штрафную во время пенальти. По инструкции RFEF "
+        "заступ считается по стопам, а не по корпусу, поэтому VAR нарушения не увидел."
+    )
+    good = (
+        "Бартра забежал в штрафную во время пенальти. По инструкции RFEF "
+        "заступ по стопам, а не по корпусу — VAR нарушения не увидел."
+    )
+    dry = "Бартра забежал в штрафную, VAR не увидел нарушения"
+    assert "стоп" in good.lower()
+    assert "rfeF".lower() in good.lower() or "rfef" in good.lower()
+    assert "стоп" not in dry.lower()
+    assert len(good) > len(dry)
+    low = good.lower()
+    for w in _META_WRAPPERS:
+        assert w not in low, (w, good)
+    assert "в посте" not in raw.lower()
+    print("OK analysis fact keeps explanation; no meta-wrapper")
 
 
 def test_analysis_excludes_is_test() -> None:

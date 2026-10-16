@@ -9,24 +9,26 @@ from src.generate.fewshot_dataset import FEWSHOT_FOR_PRODUCER
 from src.generate.guardrail import check_guardrail, has_self_harm_literal
 
 VECTOR_DRY = (
-    "По стилю тяготей к сухой дерзкой констатации с минимумом слов: факт + один "
-    "точный акцент, без лишних слов и без универсальных концовок. Это ВЕКТОР, не "
-    "жёсткое правило — если конкретная ситуация просит подкола, неожиданного ракурса "
-    "или капс-заголовка, ты свободен отклониться. Главное — живо и по делу, не по "
-    "шаблону."
+    "По стилю — живая дерзкая подача без воды. Длину выбирай по новости: "
+    "трансфер короткий, разбор (судейство, тактика, схемы) — развёрнутый, "
+    "сохрани объяснение. Факт + один точный акцент, без универсальных концовок. "
+    "Это ВЕКТОР, не жёсткое правило — если ситуация просит подкола, неожиданного "
+    "ракурса или капс-заголовка, ты свободен отклониться. Главное — живо и по делу."
 )
 
 # Подсказки направления — не рельсы (веер v2)
 DIRECTIONS = (
     "злой подкол/провокация",
-    "сухая дерзкая констатация, минимум слов",
+    "сухая дерзкая констатация",
     "неожиданный ракурс или сравнение",
     "капс-заголовок + факты, как в горячей новости",
     "свободный — пиши как чувствуешь",
 )
 
 _FORMAT_REF = """Справка о ФОРМЕ (не трафарет для копирования):
-- Длина обычно 1–4 строки; списки (результаты/достижения) длиннее.
+- Длина — по новости: трансфер короткий, разбор развёрнутый. Не режь объяснение.
+- Перечисления — списком через `• `, каждый пункт с новой строки. Не слитно.
+- Прямую речь оформляй блоком цитаты: строка начинается с `> `.
 - Плашки только для сенсаций: 💣 HERE WE GO! (transfer+verified+sensation),
   ❌ ОТМЕНА HERE WE GO!, 🔥 СРОЧНО, ⚡️ ОФИЦИАЛЬНО. Рядовое — без плашки.
 - HERE WE GO! запрещён, если veracity != verified.
@@ -121,6 +123,9 @@ def _build_user(
         "а не подставляй универсальный шаблон. Работай только с переданным фактом: "
         "никаких цифр/имён сверх данных. Если не verified — маркер источника обязателен, "
         "HERE WE GO запрещён. "
+        "Если в факте перечисление — список через «• », каждый пункт с новой строки. "
+        "Прямую речь оформляй цитатой: строка вида «> цитата». "
+        "Длину выбирай по новости: разбор не суши, трансфер не раздувай. "
         "Свобода — в подаче, не в фактах: не приписывай СМИ/инсайдеру слова и образы, "
         "которых нет во входе. Авторский подкол — голосом канала, отдельно, не под видом цитаты источника.",
     ]
@@ -161,6 +166,7 @@ def _call_terra(
     instructions: str,
     user: str,
     temperature: float,
+    verbosity: str = "medium",
 ) -> str:
     client = get_openai_client()
     response = client.responses.create(
@@ -169,7 +175,7 @@ def _call_terra(
         input=user,
         reasoning={"effort": "none"},
         temperature=temperature,
-        text={"verbosity": "low"},
+        text={"verbosity": verbosity},
     )
     return _clean_post(_extract_text(response))
 
@@ -184,6 +190,7 @@ def generate_one(
     temperature: float = 1.0,
     calibrated: bool = False,
     note: str | None = None,
+    verbosity: str = "medium",
 ) -> str:
     instructions = (
         _build_instructions_calibrated() if calibrated else _build_instructions_fan()
@@ -192,7 +199,10 @@ def generate_one(
         fact, veracity, archetype, is_sensation, direction, note=note
     )
     post = _call_terra(
-        instructions=instructions, user=user, temperature=temperature
+        instructions=instructions,
+        user=user,
+        temperature=temperature,
+        verbosity=verbosity,
     )
 
     if has_self_harm_literal(post):
@@ -206,7 +216,10 @@ def generate_one(
             reformulate_self_harm=True,
         )
         post = _call_terra(
-            instructions=instructions, user=user, temperature=temperature
+            instructions=instructions,
+            user=user,
+            temperature=temperature,
+            verbosity=verbosity,
         )
 
     return post
@@ -222,7 +235,9 @@ def generate_fan(
     """n отдельных вызовов → список {index, direction, post, flags}."""
     results: list[dict] = []
     for i, direction in enumerate(DIRECTIONS[:n], 1):
-        post = generate_one(fact, veracity, archetype, is_sensation, direction)
+        post = generate_one(
+            fact, veracity, archetype, is_sensation, direction, verbosity="low"
+        )
         flags = check_guardrail(post, veracity, fact=fact)
         results.append(
             {

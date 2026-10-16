@@ -1,0 +1,8 @@
+# Только источник @LaLiga_telegram: после вырезки ссылок остаётся хвост
+# «🏆 LA LIGA • Наши Каналы» — это самопромо, не новость.
+
+url_contains:
+  - laliga_telegram
+
+strip_line_contains:
+  - наши каналы

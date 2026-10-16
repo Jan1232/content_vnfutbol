@@ -1,0 +1,15 @@
+# Оверрайд: Шарий СВО новости — https://max.ru/channel_shariy_news
+# Ядро (require_media: true) дополняется: текстовые посты без медиа тоже ок.
+# Посты про «частный канал» / «в частном» не публикуем.
+
+chat_id: -77431404215002
+title: Шарий СВО новости
+link_contains: channel_shariy_news
+
+require_media: false
+
+block_text_contains:
+  - в частном
+  - частный тг канал
+  - частный канал
+  - в частный

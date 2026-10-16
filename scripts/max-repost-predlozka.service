@@ -1,0 +1,15 @@
+[Unit]
+Description=MAX predlozka bot (unique channel links)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/max-repost
+Environment=PYTHONPATH=/var/max-repost
+ExecStart=/var/max-repost/scripts/run-predlozka.sh
+Restart=always
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,26 @@
+# Правила SEO-канала (аналог rules/channels/*.yaml для репоста).
+# Этот канал — только Лига Европы УЕФА (Europa League).
+
+slug: uefafootball
+chat_id: -77925061343962
+link: https://max.ru/channel_uefafootball
+
+# EL = UEFA Europa League. football-data free EL не отдаёт (403) → ESPN fallback.
+competitions: [EL]
+providers: [auto]   # auto: football-data если доступно, иначе ESPN
+pick_mode: hype
+hype_window_days: 4
+
+horizon_days: 60
+post_match_grace_min: 120
+
+# Основной турнир + квалификация (ESPN: uefa.europa + uefa.europa_qual).
+competition_label: "Лига Европы УЕФА"
+competition_label_qual: "Квалификация Лиги Европы УЕФА"
+idle_title: "лига европы уефа матч смотреть онлайн прямая трансляция бесплатно"
+title_suffix: "матч смотреть онлайн прямая трансляция бесплатно"
+
+target_community: https://max.ru/channel_vnfutbol
+pin_post: true
+notify_title_change: false
+enabled: true

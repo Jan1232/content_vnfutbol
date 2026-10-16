@@ -1,0 +1,11 @@
+# Оверрайд канала GoodPaper | Обои на телефон — https://max.ru/channel_goodpaper
+# Обычные картинки/видео ок. «Только файлы» — отдельно на источник wlpr8k.
+
+chat_id: -77250724273564
+title: GoodPaper | Обои на телефон
+link_contains: channel_goodpaper
+
+require_media: true
+documents_only: false
+fixed_caption: "Ставь ❤️ если нравится"
+also_send_files: false

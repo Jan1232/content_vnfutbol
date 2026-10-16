@@ -26,6 +26,7 @@ from aiogram.types import (
 )
 
 from src.config import ARCHETYPES, FAN_MODEL, ROOT, _load_env
+from src.generate.html_post import format_post_html
 from src.ingest import db
 from src.ingest.pipeline import regenerate_for_category, replace_media_manual_query
 from src.ingest.sources import CATEGORY_LABELS, MEDIA_STRATEGY_LABELS
@@ -141,7 +142,7 @@ def _effective_arch(item: dict[str, Any]) -> str:
 
 
 def _card(item: dict[str, Any]) -> str:
-    post = html.escape(item["generated"])
+    post = format_post_html(item["generated"])
     fact = html.escape(item.get("fact") or "")
     source = item.get("source") or "?"
     link = f"https://t.me/{source}/{item['msg_id']}" if item.get("msg_id") else ""
